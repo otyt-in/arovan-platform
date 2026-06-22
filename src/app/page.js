@@ -16,11 +16,14 @@ export default function Home() {
   const [finishingMaster, setFinishingMaster] = useState([]);
   const [productLibrary, setProductLibrary] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
+  
+  // NEW: Search Query State
+  const [searchQuery, setSearchQuery] = useState('');
 
   const defaultCategory = 'Dining Tables';
   
   const [formData, setFormData] = useState({
-    category: defaultCategory, sku: '', name: '', image_base64: '', notes: '',
+    category: defaultCategory, sku: '', name: '', image_base64: '', notes: '', inspiration: '',
     dimLength: '', dimWidth: '', dimHeight: '',
     woodTypeId: '', woodCft: '', plywoodType: 'None', plywoodQty: '',
     labourHours: '', labourRate: '', finishingTypeId: '', hardwareCost: '',
@@ -28,8 +31,8 @@ export default function Home() {
     overheadsPercent: ''
   });
 
-  // --- ROLE BASED ACCESS CONTROL (RBAC) ---
-  const ADMIN_EMAILS = ['arovan011@gmail.com', 'admin@company.com']; 
+  // --- ROLE BASED ACCESS CONTROL ---
+  const ADMIN_EMAILS = ['your@email.com', 'admin@company.com']; 
   const userEmail = session?.user?.email || '';
   const isFreelancer = session && !ADMIN_EMAILS.includes(userEmail);
 
@@ -69,7 +72,6 @@ export default function Home() {
       if (finishes) setFinishingMaster(finishes);
       if (products) setProductLibrary(products);
 
-      // Only set defaults if the form hasn't been edited yet
       if (!formData.sku && products) {
         handleResetForm(products, settings, woods, finishes);
       }
@@ -80,7 +82,6 @@ export default function Home() {
     }
   };
 
-  // --- SKU LOGIC ---
   const getCategoryPrefix = (category) => {
     const map = {
       'Dining Tables': 'DT', 'Center Tables': 'CT', 'Console Tables': 'CON',
@@ -108,7 +109,7 @@ export default function Home() {
     setFormData({
       category: defaultCategory,
       sku: generateNextSKU(defaultCategory, library),
-      name: '', image_base64: '', notes: '',
+      name: '', image_base64: '', notes: '', inspiration: '',
       dimLength: '', dimWidth: '', dimHeight: '',
       woodTypeId: woods?.[0]?.id || '', woodCft: '', 
       plywoodType: 'None', plywoodQty: '',
@@ -119,7 +120,6 @@ export default function Home() {
     });
   };
 
-  // --- ACTIONS ---
   const handleSaveProduct = async (calculatedMfgCost, calculatedSellPrice) => {
     if (!formData.sku || !formData.name) {
       alert("Please enter a SKU and Product Name before saving.");
@@ -128,14 +128,14 @@ export default function Home() {
 
     const isExisting = productLibrary.find(p => p.sku === formData.sku);
     if (isExisting) {
-      if (!window.confirm(`SKU ${formData.sku} already exists in the library. Do you want to overwrite it with these new details?`)) {
-        return;
-      }
+      if (!window.confirm(`SKU ${formData.sku} already exists in the library. Do you want to overwrite it with these new details?`)) return;
     }
 
     const payload = {
       sku: formData.sku, category: formData.category, name: formData.name,
-      image_base64: formData.image_base64 || null, notes: formData.notes,
+      image_base64: formData.image_base64 || null, 
+      notes: formData.notes, 
+      inspiration: formData.inspiration || null,
       dim_length: parseFloat(formData.dimLength) || null, dim_width: parseFloat(formData.dimWidth) || null, dim_height: parseFloat(formData.dimHeight) || null,
       wood_type_id: parseInt(formData.woodTypeId) || null, wood_cft: parseFloat(formData.woodCft) || 0,
       plywood_type: formData.plywoodType, plywood_qty: parseFloat(formData.plywoodQty) || 0,
@@ -161,7 +161,7 @@ export default function Home() {
   const handleEditProduct = (product) => {
     setFormData({
       category: product.category || 'Dining Tables', sku: product.sku || '', name: product.name || '',
-      image_base64: product.image_base64 || '', notes: product.notes || '',
+      image_base64: product.image_base64 || '', notes: product.notes || '', inspiration: product.inspiration || '',
       dimLength: product.dim_length || '', dimWidth: product.dim_width || '', dimHeight: product.dim_height || '',
       woodTypeId: product.wood_type_id || woodMaster?.[0]?.id || '', woodCft: product.wood_cft || '',
       plywoodType: product.plywood_type || 'None', plywoodQty: product.plywood_qty || '',
@@ -175,12 +175,10 @@ export default function Home() {
   };
 
   const handleDuplicateProduct = (product) => {
-    // Generate a fresh, sequential SKU based on the copied category
     const newSku = generateNextSKU(product.category || 'Dining Tables');
-    
     setFormData({
       category: product.category || 'Dining Tables', sku: newSku, name: product.name || '',
-      image_base64: product.image_base64 || '', notes: product.notes || '',
+      image_base64: product.image_base64 || '', notes: product.notes || '', inspiration: product.inspiration || '',
       dimLength: product.dim_length || '', dimWidth: product.dim_width || '', dimHeight: product.dim_height || '',
       woodTypeId: product.wood_type_id || woodMaster?.[0]?.id || '', woodCft: product.wood_cft || '',
       plywoodType: product.plywood_type || 'None', plywoodQty: product.plywood_qty || '',
@@ -200,6 +198,19 @@ export default function Home() {
       else fetchAllMasterData();
     }
   };
+
+  // --- FILTER & GROUP LOGIC FOR LIBRARY ---
+  const filteredLibrary = productLibrary.filter(p => 
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    p.sku.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const groupedLibrary = filteredLibrary.reduce((groups, product) => {
+    const category = product.category || 'Uncategorized';
+    if (!groups[category]) groups[category] = [];
+    groups[category].push(product);
+    return groups;
+  }, {});
 
   // --- RENDER GATES ---
   if (authLoading) return <div className="flex items-center justify-center bg-[#f4f1eb] min-h-screen"><p>Loading security profile...</p></div>;
@@ -240,53 +251,107 @@ export default function Home() {
 
         {activeView === 'library' && (
           <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
-            <h2 className="text-lg font-medium text-gray-800 mb-4">Product Library</h2>
-            {productLibrary.length === 0 ? (
-              <p className="text-gray-500 text-center py-10">No products found. Save a product from the workspace!</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-5">
-                {productLibrary.map(item => {
-                  const woodName = woodMaster.find(w => w.id === item.wood_type_id)?.name || 'Custom Wood';
-                  const dateModified = new Date(item.modified_at).toLocaleDateString();
+            
+            {/* Library Header & Search Bar */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+              <div>
+                <h2 className="text-lg font-medium text-gray-800">Product Library</h2>
+                <p className="text-xs text-[#746b61]">Organized by category. Total items: {filteredLibrary.length}</p>
+              </div>
+              <div className="w-full sm:w-72">
+                <input 
+                  type="text" 
+                  placeholder="🔍 Search by SKU or Name..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full p-2.5 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb] focus:outline-none focus:border-[#171512]"
+                />
+              </div>
+            </div>
 
-                  return (
-                    <div key={item.sku} className="bg-white border border-[#e1d8cd] rounded-lg overflow-hidden hover:shadow-md transition flex flex-col group">
-                      <div className="w-full h-48 bg-[#faf9f6] relative border-b border-[#e1d8cd]">
-                        {item.image_base64 ? (
-                          <img src={item.image_base64} alt={item.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center text-[#8c8378]">
-                            <span className="text-2xl opacity-50 mb-1">🛋️</span>
-                            <span className="text-[10px] font-medium uppercase tracking-wider">No Photo</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="p-4 flex-1 flex flex-col justify-between bg-white">
-                        <div>
-                          <div className="flex justify-between items-start mb-2">
-                            <span className="text-[10px] font-bold bg-[#171512] px-2 py-0.5 rounded text-white tracking-wider">{item.sku}</span>
-                            <span className="text-sm font-bold text-[#171512]">₹{item.estimated_selling_price?.toLocaleString()}</span>
-                          </div>
-                          <h3 className="font-semibold text-gray-900 text-sm mb-1 leading-tight">{item.name}</h3>
-                          <p className="text-xs text-[#746b61] mb-1">{item.category}</p>
-                          <p className="text-[11px] text-[#8c8378]">{woodName}</p>
-                        </div>
-                        
-                        <div className="mt-4 pt-3 border-t border-[#f0e9df] flex items-center justify-between">
-                          <span className="text-[9px] text-[#8c8378] uppercase tracking-wider">Upd: {dateModified}</span>
-                          {!isFreelancer && (
-                            <div className="flex gap-2">
-                              <button onClick={() => handleEditProduct(item)} className="text-[10px] font-bold text-[#746b61] hover:text-[#171512] transition uppercase">Edit</button>
-                              <button onClick={() => handleDuplicateProduct(item)} className="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition uppercase ml-1">Dup</button>
-                              <button onClick={() => handleDeleteProduct(item.sku)} className="text-[10px] font-bold text-red-400 hover:text-red-600 transition uppercase ml-2">Del</button>
+            {Object.keys(groupedLibrary).length === 0 ? (
+              <p className="text-gray-500 text-center py-10">No products match your search.</p>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {Object.entries(groupedLibrary).map(([category, items]) => (
+                  
+                  /* Category Accordion Container */
+                  <details key={category} className="group border border-[#e1d8cd] rounded-lg bg-white overflow-hidden">
+                    <summary className="flex justify-between items-center cursor-pointer p-4 bg-[#fdfcfb] hover:bg-[#f4f1eb] transition font-medium text-[#171512] list-none">
+                      <span className="flex items-center gap-2">
+                        <span className="text-[#746b61] group-open:rotate-90 transition-transform">▶</span>
+                        {category} <span className="text-xs text-[#8c8378] ml-2">({items.length} items)</span>
+                      </span>
+                    </summary>
+                    
+                    {/* Grid of Products inside Accordion */}
+                    <div className="p-5 bg-white border-t border-[#e1d8cd]">
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+                        {items.map(item => {
+                          const woodName = woodMaster.find(w => w.id === item.wood_type_id)?.name || 'Custom Wood';
+                          const dateModified = new Date(item.modified_at).toLocaleDateString();
+
+                          return (
+                            <div key={item.sku} className="bg-white border border-[#e1d8cd] rounded-lg overflow-hidden hover:shadow-md transition flex flex-col group/card h-full">
+                              
+                              <div className="w-full h-48 bg-[#faf9f6] relative border-b border-[#e1d8cd] shrink-0">
+                                {item.image_base64 ? (
+                                  <img src={item.image_base64} alt={item.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex flex-col items-center justify-center text-[#8c8378]">
+                                    <span className="text-2xl opacity-50 mb-1">🛋️</span>
+                                    <span className="text-[10px] font-medium uppercase tracking-wider">No Photo</span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              <div className="p-4 flex-1 flex flex-col bg-white">
+                                <div className="flex-1">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <span className="text-[10px] font-bold bg-[#171512] px-2 py-0.5 rounded text-white tracking-wider">{item.sku}</span>
+                                    <span className="text-sm font-bold text-[#171512]">₹{item.estimated_selling_price?.toLocaleString()}</span>
+                                  </div>
+                                  <h3 className="font-semibold text-gray-900 text-sm mb-1 leading-tight">{item.name}</h3>
+                                  
+                                  {/* Marketing Tagline */}
+                                  {item.notes && (
+                                    <p className="text-xs text-[#746b61] italic line-clamp-2 mb-2">{item.notes}</p>
+                                  )}
+                                  
+                                  <p className="text-[11px] text-[#8c8378]">{woodName}</p>
+                                  
+                                  {/* Expandable Story Tag */}
+                                  {item.inspiration && (
+                                    <details className="mt-3 text-xs text-[#746b61] group/story">
+                                      <summary className="cursor-pointer font-semibold underline decoration-[#dcd3c9] underline-offset-2 hover:text-[#171512] list-none">
+                                        <span className="group-open/story:hidden">Read Story</span>
+                                        <span className="hidden group-open/story:inline">Close Story</span>
+                                      </summary>
+                                      <div className="mt-2 p-3 bg-[#fdfcfb] rounded border border-[#e1d8cd] whitespace-pre-wrap leading-relaxed shadow-inner">
+                                        {item.inspiration}
+                                      </div>
+                                    </details>
+                                  )}
+                                </div>
+                                
+                                <div className="mt-4 pt-3 border-t border-[#f0e9df] flex items-center justify-between shrink-0">
+                                  <span className="text-[9px] text-[#8c8378] uppercase tracking-wider">Upd: {dateModified}</span>
+                                  {!isFreelancer && (
+                                    <div className="flex gap-2">
+                                      <button onClick={() => handleEditProduct(item)} className="text-[10px] font-bold text-[#746b61] hover:text-[#171512] transition uppercase">Edit</button>
+                                      <button onClick={() => handleDuplicateProduct(item)} className="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition uppercase ml-1">Dup</button>
+                                      <button onClick={() => handleDeleteProduct(item.sku)} className="text-[10px] font-bold text-red-400 hover:text-red-600 transition uppercase ml-2">Del</button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                          )}
-                        </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  );
-                })}
+                  </details>
+                ))}
               </div>
             )}
           </div>

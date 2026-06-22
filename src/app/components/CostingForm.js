@@ -150,12 +150,22 @@ export default function CostingForm({
             </div>
           </div>
           <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <label className="text-xs font-semibold text-[#4a443e]">Specification Details / Production Notes</label>
+            <label className="text-xs font-semibold text-[#4a443e]">Short Description / Tagline (1-2 lines)</label>
             <textarea 
               value={formData.notes} 
               onChange={(e) => handleChange('notes', e.target.value)}
-              className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb] min-h-[70px]"
-              placeholder="Grain layout constraints, cushion core density tags, hardware finishes..."
+              className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb] min-h-[50px]"
+              placeholder="e.g. Monolithic slab shaped by nature..."
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
+            <label className="text-xs font-semibold text-[#4a443e]">Inspiration & Backstory (Optional)</label>
+            <textarea 
+              value={formData.inspiration} 
+              onChange={(e) => handleChange('inspiration', e.target.value)}
+              className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb] min-h-[80px]"
+              placeholder="e.g. Crafted from a single Monkey Pod slab, where the natural edge flows into the base..."
             />
           </div>
         </div>
