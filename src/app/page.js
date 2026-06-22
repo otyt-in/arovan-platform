@@ -218,27 +218,102 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#f4f1eb]">
-      <header className="flex items-center justify-between bg-white border-b border-[#e1d8cd] px-8 py-3 sticky top-0 z-20 shadow-sm">
-        <div>
-          <img src="/Logo_1600x900.jpeg" alt="Arovan Logo" className="h-12 object-contain mb-1" />
-          <p className="text-[10px] text-[#746b61] font-medium uppercase tracking-wider">Product Master & Costing Engine</p>
-        </div>
-        <div className="flex gap-2 items-center">
+      {/* --- REDESIGNED PREMIUM RESPONSIVE HEADER --- */}
+      <header className="bg-white border-b border-[#e1d8cd] sticky top-0 z-30 shadow-sm">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-8">
+          
+          {/* Main Header Row */}
+          <div className="flex justify-between items-center h-16 sm:h-20">
+            
+            {/* Branding Zone */}
+            <div className="flex items-center gap-4 sm:gap-6">
+              <img src="/Logo_1600x900.jpeg" alt="Arovan Logo" className="h-8 sm:h-12 object-contain" />
+              <div className="hidden sm:block h-8 w-px bg-[#e1d8cd]"></div>
+              <p className="hidden sm:block text-[11px] font-bold text-[#746b61] uppercase tracking-[0.2em] mt-1">
+                Product Master Engine
+              </p>
+            </div>
+
+            {/* Desktop Navigation */}
+            <div className="hidden md:flex items-center h-full">
+              <nav className="flex h-full mr-8 gap-2">
+                {!isFreelancer && (
+                  <>
+                    <button 
+                      onClick={() => setActiveView('workspace')} 
+                      className={`px-4 text-xs font-bold uppercase tracking-widest h-full border-b-2 transition-colors flex items-center ${activeView === 'workspace' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#8c8378] hover:text-[#171512]'}`}
+                    >
+                      Workspace
+                    </button>
+                    <button 
+                      onClick={() => setActiveView('library')} 
+                      className={`px-4 text-xs font-bold uppercase tracking-widest h-full border-b-2 transition-colors flex items-center ${activeView === 'library' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#8c8378] hover:text-[#171512]'}`}
+                    >
+                      Library ({productLibrary.length})
+                    </button>
+                    <button 
+                      onClick={() => setActiveView('settings')} 
+                      className={`px-4 text-xs font-bold uppercase tracking-widest h-full border-b-2 transition-colors flex items-center gap-2 ${activeView === 'settings' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#8c8378] hover:text-[#171512]'}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                      Settings
+                    </button>
+                  </>
+                )}
+              </nav>
+              
+              <div className="flex items-center pl-8 border-l border-[#e1d8cd] h-8">
+                {isFreelancer && <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-1 rounded-sm mr-4 border border-blue-100">Contractor</span>}
+                <button 
+                  onClick={() => supabase.auth.signOut()} 
+                  className="text-[11px] font-bold text-[#8c8378] hover:text-red-600 uppercase tracking-widest transition-colors"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+
+            {/* Mobile Actions (Right Side) */}
+            <div className="md:hidden flex items-center gap-3">
+               {isFreelancer && <span className="text-[9px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-1 rounded-sm border border-blue-100">Contractor</span>}
+               <button 
+                  onClick={() => supabase.auth.signOut()} 
+                  className="text-[10px] font-bold text-[#8c8378] hover:text-red-600 uppercase tracking-widest"
+               >
+                  Sign Out
+               </button>
+            </div>
+          </div>
+
+          {/* Mobile Navigation Row (Hidden on Desktop) */}
           {!isFreelancer && (
-            <>
-              <button onClick={() => setActiveView('workspace')} className={`px-4 py-2 text-xs font-semibold uppercase rounded-md transition ${activeView === 'workspace' ? 'bg-[#171512] text-white' : 'text-[#746b61]'}`}>Workspace</button>
-              <button onClick={() => setActiveView('library')} className={`px-4 py-2 text-xs font-semibold uppercase rounded-md transition ${activeView === 'library' ? 'bg-[#171512] text-white' : 'text-[#746b61]'}`}>Library ({productLibrary.length})</button>
-              <button onClick={() => setActiveView('settings')} className={`px-4 py-2 text-xs font-semibold uppercase rounded-md transition ${activeView === 'settings' ? 'bg-[#171512] text-white' : 'text-[#746b61]'}`}>⚙️ Settings</button>
-            </>
+            <div className="md:hidden flex items-center overflow-x-auto no-scrollbar gap-2 pb-3 pt-1">
+              <button 
+                onClick={() => setActiveView('workspace')} 
+                className={`whitespace-nowrap px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-full transition-colors ${activeView === 'workspace' ? 'bg-[#171512] text-white' : 'bg-[#f4f1eb] text-[#746b61]'}`}
+              >
+                Workspace
+              </button>
+              <button 
+                onClick={() => setActiveView('library')} 
+                className={`whitespace-nowrap px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-full transition-colors ${activeView === 'library' ? 'bg-[#171512] text-white' : 'bg-[#f4f1eb] text-[#746b61]'}`}
+              >
+                Library ({productLibrary.length})
+              </button>
+              <button 
+                onClick={() => setActiveView('settings')} 
+                className={`whitespace-nowrap px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-full transition-colors flex items-center gap-1.5 ${activeView === 'settings' ? 'bg-[#171512] text-white' : 'bg-[#f4f1eb] text-[#746b61]'}`}
+              >
+                Settings
+              </button>
+            </div>
           )}
-          {isFreelancer && <span className="text-xs font-bold uppercase text-blue-600 bg-blue-50 px-3 py-1.5 rounded mr-2 border border-blue-100">Contractor Access</span>}
-          <button onClick={() => supabase.auth.signOut()} className="px-4 py-2 border border-[#dcd3c9] text-xs font-semibold uppercase rounded-md hover:bg-red-50 hover:text-red-600 transition ml-2">Logout</button>
         </div>
       </header>
 
-      <main className="max-w-[1400px] mx-auto p-6">
+      <main className="max-w-[1400px] mx-auto p-4 sm:p-6 lg:p-8">
         {activeView === 'workspace' && !isFreelancer && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 items-start">
             <div className="col-span-1 lg:col-span-2">
               <CostingForm formData={formData} setFormData={setFormData} woodMaster={woodMaster} finishingMaster={finishingMaster} onCategoryChange={handleCategoryChange} />
             </div>
@@ -249,97 +324,98 @@ export default function Home() {
         )}
 
         {activeView === 'library' && (
-          <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
+          <div className="bg-white p-6 lg:p-8 rounded-xl border border-[#e1d8cd] shadow-sm">
             
             {/* Library Header & Search Bar */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
               <div>
-                <h2 className="text-lg font-medium text-gray-800">Product Library</h2>
-                <p className="text-xs text-[#746b61]">Organized by category. Total items: {filteredLibrary.length}</p>
+                <h2 className="text-xl font-medium text-gray-900">Product Library</h2>
+                <p className="text-xs text-[#746b61] mt-1">Organized by category. Total items: {filteredLibrary.length}</p>
               </div>
-              <div className="w-full sm:w-72">
+              <div className="w-full sm:w-80">
                 <input 
                   type="text" 
                   placeholder="🔍 Search by SKU or Name..." 
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full p-2.5 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb] focus:outline-none focus:border-[#171512]"
+                  className="w-full p-3 border border-[#dcd3c9] rounded-lg text-sm bg-[#fdfcfb] focus:outline-none focus:border-[#171512] focus:ring-1 focus:ring-[#171512] transition-shadow"
                 />
               </div>
             </div>
 
             {Object.keys(groupedLibrary).length === 0 ? (
-              <p className="text-gray-500 text-center py-10">No products match your search.</p>
+              <p className="text-gray-500 text-center py-12 bg-[#faf9f6] rounded-lg border border-dashed border-[#dcd3c9]">No products match your search.</p>
             ) : (
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-6">
                 {Object.entries(groupedLibrary).map(([category, items]) => (
                   
                   /* Category Accordion Container */
-                  <details key={category} className="group border border-[#e1d8cd] rounded-lg bg-white overflow-hidden">
-                    <summary className="flex justify-between items-center cursor-pointer p-4 bg-[#fdfcfb] hover:bg-[#f4f1eb] transition font-medium text-[#171512] list-none">
-                      <span className="flex items-center gap-2">
-                        <span className="text-[#746b61] group-open:rotate-90 transition-transform">▶</span>
-                        {category} <span className="text-xs text-[#8c8378] ml-2">({items.length} items)</span>
+                  <details key={category} open className="group border border-[#e1d8cd] rounded-xl bg-white overflow-hidden shadow-sm">
+                    <summary className="flex justify-between items-center cursor-pointer p-5 bg-[#fdfcfb] hover:bg-[#f4f1eb] transition-colors font-medium text-[#171512] list-none select-none">
+                      <span className="flex items-center gap-3">
+                        <span className="text-[#746b61] group-open:rotate-90 transition-transform duration-200">▶</span>
+                        <span className="text-sm uppercase tracking-widest">{category}</span> 
+                        <span className="text-xs font-semibold text-[#8c8378] ml-2 bg-white px-2 py-0.5 rounded border border-[#e1d8cd]">{items.length}</span>
                       </span>
                     </summary>
                     
                     {/* Grid of Products inside Accordion */}
-                    <div className="p-5 bg-white border-t border-[#e1d8cd]">
-                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+                    <div className="p-5 lg:p-6 bg-white border-t border-[#e1d8cd]">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {items.map(item => {
                           const woodName = woodMaster.find(w => w.id === item.wood_type_id)?.name || 'Custom Wood';
                           const dateModified = new Date(item.modified_at).toLocaleDateString();
 
                           return (
-                            <div key={item.sku} className="bg-white border border-[#e1d8cd] rounded-lg overflow-hidden hover:shadow-md transition flex flex-col group/card h-full">
+                            <div key={item.sku} className="bg-white border border-[#e1d8cd] rounded-xl overflow-hidden hover:shadow-md hover:border-[#dcd3c9] transition-all duration-200 flex flex-col group/card h-full">
                               
-                              <div className="w-full h-48 bg-[#faf9f6] relative border-b border-[#e1d8cd] shrink-0">
+                              <div className="w-full h-52 bg-[#faf9f6] relative border-b border-[#e1d8cd] shrink-0">
                                 {item.image_base64 ? (
                                   <img src={item.image_base64} alt={item.name} className="w-full h-full object-cover" />
                                 ) : (
                                   <div className="w-full h-full flex flex-col items-center justify-center text-[#8c8378]">
-                                    <span className="text-2xl opacity-50 mb-1">🛋️</span>
-                                    <span className="text-[10px] font-medium uppercase tracking-wider">No Photo</span>
+                                    <span className="text-3xl opacity-40 mb-2">🛋️</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-widest opacity-60">No Photo</span>
                                   </div>
                                 )}
                               </div>
                               
-                              <div className="p-4 flex-1 flex flex-col bg-white">
+                              <div className="p-5 flex-1 flex flex-col bg-white">
                                 <div className="flex-1">
-                                  <div className="flex justify-between items-start mb-2">
-                                    <span className="text-[10px] font-bold bg-[#171512] px-2 py-0.5 rounded text-white tracking-wider">{item.sku}</span>
+                                  <div className="flex justify-between items-start mb-3">
+                                    <span className="text-[10px] font-bold bg-[#171512] px-2.5 py-1 rounded text-white tracking-widest">{item.sku}</span>
                                     <span className="text-sm font-bold text-[#171512]">₹{item.estimated_selling_price?.toLocaleString()}</span>
                                   </div>
-                                  <h3 className="font-semibold text-gray-900 text-sm mb-1 leading-tight">{item.name}</h3>
+                                  <h3 className="font-semibold text-gray-900 text-sm mb-1.5 leading-tight">{item.name}</h3>
                                   
                                   {/* Marketing Tagline */}
                                   {item.notes && (
-                                    <p className="text-xs text-[#746b61] italic line-clamp-2 mb-2">{item.notes}</p>
+                                    <p className="text-xs text-[#746b61] italic line-clamp-2 mb-3 leading-relaxed">{item.notes}</p>
                                   )}
                                   
-                                  <p className="text-[11px] text-[#8c8378]">{woodName}</p>
+                                  <p className="text-[11px] font-medium text-[#8c8378]">{woodName}</p>
                                   
                                   {/* Expandable Story Tag */}
                                   {item.inspiration && (
-                                    <details className="mt-3 text-xs text-[#746b61] group/story">
-                                      <summary className="cursor-pointer font-semibold underline decoration-[#dcd3c9] underline-offset-2 hover:text-[#171512] list-none">
+                                    <details className="mt-4 text-xs text-[#746b61] group/story">
+                                      <summary className="cursor-pointer font-bold uppercase tracking-wider underline decoration-[#dcd3c9] underline-offset-4 hover:text-[#171512] transition-colors list-none">
                                         <span className="group-open/story:hidden">Read Story</span>
                                         <span className="hidden group-open/story:inline">Close Story</span>
                                       </summary>
-                                      <div className="mt-2 p-3 bg-[#fdfcfb] rounded border border-[#e1d8cd] whitespace-pre-wrap leading-relaxed shadow-inner">
+                                      <div className="mt-3 p-3.5 bg-[#faf9f6] rounded-md border border-[#e1d8cd] whitespace-pre-wrap leading-relaxed shadow-inner">
                                         {item.inspiration}
                                       </div>
                                     </details>
                                   )}
                                 </div>
                                 
-                                <div className="mt-4 pt-3 border-t border-[#f0e9df] flex items-center justify-between shrink-0">
-                                  <span className="text-[9px] text-[#8c8378] uppercase tracking-wider">Upd: {dateModified}</span>
+                                <div className="mt-5 pt-4 border-t border-[#f0e9df] flex items-center justify-between shrink-0">
+                                  <span className="text-[9px] font-semibold text-[#8c8378] uppercase tracking-widest">Upd: {dateModified}</span>
                                   {!isFreelancer && (
-                                    <div className="flex gap-2">
-                                      <button onClick={() => handleEditProduct(item)} className="text-[10px] font-bold text-[#746b61] hover:text-[#171512] transition uppercase">Edit</button>
-                                      <button onClick={() => handleDuplicateProduct(item)} className="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition uppercase ml-1">Dup</button>
-                                      <button onClick={() => handleDeleteProduct(item.sku)} className="text-[10px] font-bold text-red-400 hover:text-red-600 transition uppercase ml-2">Del</button>
+                                    <div className="flex gap-3">
+                                      <button onClick={() => handleEditProduct(item)} className="text-[10px] font-bold text-[#746b61] hover:text-[#171512] transition-colors uppercase tracking-wider">Edit</button>
+                                      <button onClick={() => handleDuplicateProduct(item)} className="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors uppercase tracking-wider">Dup</button>
+                                      <button onClick={() => handleDeleteProduct(item.sku)} className="text-[10px] font-bold text-red-400 hover:text-red-600 transition-colors uppercase tracking-wider">Del</button>
                                     </div>
                                   )}
                                 </div>
