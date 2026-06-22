@@ -17,7 +17,6 @@ export default function Home() {
   const [productLibrary, setProductLibrary] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
   
-  // NEW: Search Query State
   const [searchQuery, setSearchQuery] = useState('');
 
   const defaultCategory = 'Dining Tables';
@@ -86,7 +85,7 @@ export default function Home() {
     const map = {
       'Dining Tables': 'DT', 'Center Tables': 'CT', 'Console Tables': 'CON',
       'Nesting Table': 'NST', 'End Tables': 'ET', 'Benches': 'BEN',
-      'Sofas': 'SOF', 'Chairs': 'CHR', 'High Stools': 'HST', 'Beds': 'BED'
+      'Sofas': 'SOF', 'Chairs': 'CHR', 'High Stools': 'HST', 'Beds': 'BED', 'Custom': 'CUS'
     };
     return map[category] || 'CUS';
   };
@@ -134,7 +133,7 @@ export default function Home() {
     const payload = {
       sku: formData.sku, category: formData.category, name: formData.name,
       image_base64: formData.image_base64 || null, 
-      notes: formData.notes, 
+      notes: formData.notes || null, 
       inspiration: formData.inspiration || null,
       dim_length: parseFloat(formData.dimLength) || null, dim_width: parseFloat(formData.dimWidth) || null, dim_height: parseFloat(formData.dimHeight) || null,
       wood_type_id: parseInt(formData.woodTypeId) || null, wood_cft: parseFloat(formData.woodCft) || 0,
@@ -222,7 +221,7 @@ export default function Home() {
       <header className="flex items-center justify-between bg-white border-b border-[#e1d8cd] px-8 py-3 sticky top-0 z-20 shadow-sm">
         <div>
           <img src="/Logo_1600x900.jpeg" alt="Arovan Logo" className="h-12 object-contain mb-1" />
-          <p className="text-[10px] text-[#746b61] font-medium uppercase tracking-wider">Product Master Engine Cloud V2</p>
+          <p className="text-[10px] text-[#746b61] font-medium uppercase tracking-wider">Product Master & Costing Engine</p>
         </div>
         <div className="flex gap-2 items-center">
           {!isFreelancer && (

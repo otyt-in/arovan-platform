@@ -67,6 +67,7 @@ export default function CostingForm({
 
   return (
     <div className="flex flex-col gap-5">
+      {/* PANEL 1: IDENTITY */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
         <h3 className="text-xs uppercase font-bold tracking-wider text-[#171512] mb-4 flex items-center gap-2">
           <span className="w-5 h-5 rounded-full bg-[#171512] text-white flex items-center justify-center text-[10px]">1</span>
@@ -93,6 +94,7 @@ export default function CostingForm({
               <option value="Chairs">Chairs</option>
               <option value="High Stools">High Stools</option>
               <option value="Beds">Beds</option>
+              <option value="Custom">Custom</option>
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
@@ -149,7 +151,8 @@ export default function CostingForm({
               )}
             </div>
           </div>
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
+
+          <div className="flex flex-col gap-1.5 sm:col-span-2 mt-2">
             <label className="text-xs font-semibold text-[#4a443e]">Short Description / Tagline (1-2 lines)</label>
             <textarea 
               value={formData.notes} 
@@ -171,6 +174,7 @@ export default function CostingForm({
         </div>
       </div>
 
+      {/* PANEL 2: DIMENSIONS */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
         <h3 className="text-xs uppercase font-bold tracking-wider text-[#171512] mb-4 flex items-center gap-2">
           <span className="w-5 h-5 rounded-full bg-[#171512] text-white flex items-center justify-center text-[10px]">2</span>
@@ -192,6 +196,7 @@ export default function CostingForm({
         </div>
       </div>
 
+      {/* PANEL 3: MATERIALS */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
         <h3 className="text-xs uppercase font-bold tracking-wider text-[#171512] mb-4 flex items-center gap-2">
           <span className="w-5 h-5 rounded-full bg-[#171512] text-white flex items-center justify-center text-[10px]">3</span>
