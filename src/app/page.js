@@ -190,8 +190,19 @@ export default function Home() {
     setActiveView('workspace');
   };
 
-  const handleDeleteProduct = async (sku) => {
+  // --- UPDATED DELETE FUNCTION (REMOVES STORAGE IMAGE) ---
+  const handleDeleteProduct = async (sku, imageUrl) => {
     if (window.confirm(`Are you absolutely sure you want to permanently delete ${sku}?`)) {
+      
+      // 1. If the product has an image, delete it from the cloud bucket first
+      if (imageUrl) {
+        const fileName = imageUrl.split('/').pop();
+        if (fileName) {
+          await supabase.storage.from('product-images').remove([fileName]);
+        }
+      }
+
+      // 2. Delete the actual product row from the database
       const { error } = await supabase.from('product_master').delete().eq('sku', sku);
       if (error) alert("Error deleting product: " + error.message);
       else fetchAllMasterData();
@@ -415,7 +426,7 @@ export default function Home() {
                                     <div className="flex gap-3">
                                       <button onClick={() => handleEditProduct(item)} className="text-[10px] font-bold text-[#746b61] hover:text-[#171512] transition-colors uppercase tracking-wider">Edit</button>
                                       <button onClick={() => handleDuplicateProduct(item)} className="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors uppercase tracking-wider">Dup</button>
-                                      <button onClick={() => handleDeleteProduct(item.sku)} className="text-[10px] font-bold text-red-400 hover:text-red-600 transition-colors uppercase tracking-wider">Del</button>
+                                      <button onClick={() => handleDeleteProduct(item.sku, item.image_base64)} className="text-[10px] font-bold text-red-400 hover:text-red-600 transition-colors uppercase tracking-wider">Del</button>
                                     </div>
                                   )}
                                 </div>
