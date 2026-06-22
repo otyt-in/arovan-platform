@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 
 export default function Settings({ globalSettings, woodMaster, finishingMaster, refreshData }) {
@@ -12,6 +12,13 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
   const [globals, setGlobals] = useState(globalSettings || { labour_rate: 300, overheads_percent: 20, margin_percent: 40 });
   const [woods, setWoods] = useState(woodMaster || []);
   const [finishes, setFinishes] = useState(finishingMaster || []);
+
+  // FIX 1: Ensure local screen syncs perfectly when cloud data refreshes
+  useEffect(() => {
+    if (globalSettings) setGlobals(globalSettings);
+    if (woodMaster) setWoods(woodMaster);
+    if (finishingMaster) setFinishes(finishingMaster);
+  }, [globalSettings, woodMaster, finishingMaster]);
 
   const handleUnlock = (e) => {
     e.preventDefault();
@@ -35,19 +42,19 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
         }).eq('id', globalSettings.id);
       }
 
-      // 2. Save Wood Master (Upsert handles both updating old ones and inserting new ones)
-      const woodPayload = woods.map(w => w.isNew 
-        ? { name: w.name, rate_per_cft_premium: parseFloat(w.rate_per_cft_premium) } 
-        : { id: w.id, name: w.name, rate_per_cft_premium: parseFloat(w.rate_per_cft_premium) }
-      );
-      if (woodPayload.length > 0) await supabase.from('wood_master').upsert(woodPayload);
+      // FIX 2: Split Wood Master into existing updates and new inserts to prevent database key conflicts
+      const existingWoods = woods.filter(w => !w.isNew).map(w => ({ id: w.id, name: w.name, rate_per_cft_premium: parseFloat(w.rate_per_cft_premium) }));
+      const newWoods = woods.filter(w => w.isNew).map(w => ({ name: w.name, rate_per_cft_premium: parseFloat(w.rate_per_cft_premium) }));
 
-      // 3. Save Finishing Master
-      const finishPayload = finishes.map(f => f.isNew 
-        ? { name: f.name, flat_rate: parseFloat(f.flat_rate) } 
-        : { id: f.id, name: f.name, flat_rate: parseFloat(f.flat_rate) }
-      );
-      if (finishPayload.length > 0) await supabase.from('finishing_master').upsert(finishPayload);
+      if (existingWoods.length > 0) await supabase.from('wood_master').upsert(existingWoods);
+      if (newWoods.length > 0) await supabase.from('wood_master').insert(newWoods);
+
+      // FIX 3: Split Finishing Master into existing updates and new inserts
+      const existingFinishes = finishes.filter(f => !f.isNew).map(f => ({ id: f.id, name: f.name, flat_rate: parseFloat(f.flat_rate) }));
+      const newFinishes = finishes.filter(f => f.isNew).map(f => ({ name: f.name, flat_rate: parseFloat(f.flat_rate) }));
+
+      if (existingFinishes.length > 0) await supabase.from('finishing_master').upsert(existingFinishes);
+      if (newFinishes.length > 0) await supabase.from('finishing_master').insert(newFinishes);
 
       alert("Settings successfully saved to the cloud!");
       refreshData(); // Tells the main page to re-download the fresh data
@@ -63,6 +70,7 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
     if (confirm("Delete this wood type?")) {
       if (id) await supabase.from('wood_master').delete().eq('id', id);
       setWoods(woods.filter((_, i) => i !== index));
+      refreshData();
     }
   };
 
@@ -71,6 +79,7 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
     if (confirm("Delete this finish type?")) {
       if (id) await supabase.from('finishing_master').delete().eq('id', id);
       setFinishes(finishes.filter((_, i) => i !== index));
+      refreshData();
     }
   };
 
@@ -78,7 +87,7 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
   if (!isUnlocked) {
     return (
       <div className="flex flex-col items-center justify-center p-12 bg-white rounded-lg border border-[#e1d8cd] shadow-sm max-w-sm mx-auto mt-10">
-        <h2 className="font-serif text-xl mb-2">Admin Configuration</h2>
+        <h2 className="font-serif text-xl mb-2 brand-serif text-[#171512]">Admin Configuration</h2>
         <p className="text-xs text-[#746b61] mb-6 text-center">Enter PIN to manage master rates and margins.</p>
         <form onSubmit={handleUnlock} className="w-full flex flex-col gap-3">
           <input 
@@ -89,7 +98,7 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
             className="w-full p-3 border border-[#dcd3c9] rounded-md text-center tracking-[0.5em] focus:outline-none focus:border-[#171512]"
             autoFocus
           />
-          <button type="submit" className="w-full py-3 bg-[#171512] text-white text-sm font-medium rounded-md">Unlock</button>
+          <button type="submit" className="w-full py-3 bg-[#171512] text-white text-sm font-bold uppercase tracking-wider rounded-md">Unlock</button>
         </form>
       </div>
     );
@@ -106,16 +115,16 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
         <button 
           onClick={handleSaveToCloud}
           disabled={isSaving}
-          className="px-6 py-2.5 bg-[#171512] text-white text-sm font-medium rounded-md hover:opacity-90 disabled:opacity-50"
+          className="px-6 py-2.5 bg-[#171512] text-white text-xs font-bold uppercase tracking-wider rounded-md hover:opacity-90 disabled:opacity-50 transition"
         >
           {isSaving ? 'Saving to Cloud...' : 'Save Settings'}
         </button>
       </div>
 
       <div className="flex border-b border-[#e1d8cd] bg-[#fdfcfb]">
-        <button onClick={() => setActiveTab('wood')} className={`px-6 py-3 text-sm font-medium border-b-2 ${activeTab === 'wood' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61]'}`}>Wood Master</button>
-        <button onClick={() => setActiveTab('finishing')} className={`px-6 py-3 text-sm font-medium border-b-2 ${activeTab === 'finishing' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61]'}`}>Finishing Master</button>
-        <button onClick={() => setActiveTab('globals')} className={`px-6 py-3 text-sm font-medium border-b-2 ${activeTab === 'globals' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61]'}`}>Global Margins</button>
+        <button onClick={() => setActiveTab('wood')} className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition ${activeTab === 'wood' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61] hover:text-[#171512]'}`}>Wood Master</button>
+        <button onClick={() => setActiveTab('finishing')} className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition ${activeTab === 'finishing' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61] hover:text-[#171512]'}`}>Finishing Master</button>
+        <button onClick={() => setActiveTab('globals')} className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition ${activeTab === 'globals' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61] hover:text-[#171512]'}`}>Global Margins</button>
       </div>
 
       <div className="p-6">
@@ -128,12 +137,12 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
             </div>
             {woods.map((w, index) => (
               <div key={index} className="grid grid-cols-12 gap-4 items-center mb-3">
-                <input type="text" value={w.name} onChange={(e) => { const nw = [...woods]; nw[index].name = e.target.value; setWoods(nw); }} className="col-span-6 p-2 border border-[#dcd3c9] rounded-md text-sm" />
-                <input type="number" value={w.rate_per_cft_premium} onChange={(e) => { const nw = [...woods]; nw[index].rate_per_cft_premium = e.target.value; setWoods(nw); }} className="col-span-4 p-2 border border-[#dcd3c9] rounded-md text-sm" />
-                <button onClick={() => deleteWood(index, w.id)} className="col-span-2 text-red-500 hover:text-red-700 text-sm text-right px-2">Delete</button>
+                <input type="text" value={w.name} onChange={(e) => { const nw = [...woods]; nw[index].name = e.target.value; setWoods(nw); }} className="col-span-6 p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
+                <input type="number" value={w.rate_per_cft_premium} onChange={(e) => { const nw = [...woods]; nw[index].rate_per_cft_premium = e.target.value; setWoods(nw); }} className="col-span-4 p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
+                <button onClick={() => deleteWood(index, w.id)} className="col-span-2 text-red-400 hover:text-red-600 text-xs font-bold uppercase tracking-wider text-right px-2 transition">Delete</button>
               </div>
             ))}
-            <button onClick={addWood} className="mt-4 text-sm font-medium text-[#171512] border border-[#dcd3c9] px-4 py-2 rounded-md hover:bg-[#f4f1eb]">+ Add Wood Type</button>
+            <button onClick={addWood} className="mt-4 text-xs font-bold uppercase tracking-wider text-[#171512] border border-[#dcd3c9] px-4 py-2.5 rounded-md hover:bg-[#f4f1eb] transition">+ Add Wood Type</button>
           </div>
         )}
 
@@ -146,12 +155,12 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
             </div>
             {finishes.map((f, index) => (
               <div key={index} className="grid grid-cols-12 gap-4 items-center mb-3">
-                <input type="text" value={f.name} onChange={(e) => { const nf = [...finishes]; nf[index].name = e.target.value; setFinishes(nf); }} className="col-span-6 p-2 border border-[#dcd3c9] rounded-md text-sm" />
-                <input type="number" value={f.flat_rate} onChange={(e) => { const nf = [...finishes]; nf[index].flat_rate = e.target.value; setFinishes(nf); }} className="col-span-4 p-2 border border-[#dcd3c9] rounded-md text-sm" />
-                <button onClick={() => deleteFinish(index, f.id)} className="col-span-2 text-red-500 hover:text-red-700 text-sm text-right px-2">Delete</button>
+                <input type="text" value={f.name} onChange={(e) => { const nf = [...finishes]; nf[index].name = e.target.value; setFinishes(nf); }} className="col-span-6 p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
+                <input type="number" value={f.flat_rate} onChange={(e) => { const nf = [...finishes]; nf[index].flat_rate = e.target.value; setFinishes(nf); }} className="col-span-4 p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
+                <button onClick={() => deleteFinish(index, f.id)} className="col-span-2 text-red-400 hover:text-red-600 text-xs font-bold uppercase tracking-wider text-right px-2 transition">Delete</button>
               </div>
             ))}
-            <button onClick={addFinish} className="mt-4 text-sm font-medium text-[#171512] border border-[#dcd3c9] px-4 py-2 rounded-md hover:bg-[#f4f1eb]">+ Add Finish Type</button>
+            <button onClick={addFinish} className="mt-4 text-xs font-bold uppercase tracking-wider text-[#171512] border border-[#dcd3c9] px-4 py-2.5 rounded-md hover:bg-[#f4f1eb] transition">+ Add Finish Type</button>
           </div>
         )}
 
@@ -159,15 +168,15 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
           <div className="max-w-md flex flex-col gap-5">
             <div>
               <label className="block text-xs font-semibold text-[#4a443e] mb-1.5">Default Labour Rate (₹/Hr)</label>
-              <input type="number" value={globals.labour_rate} onChange={(e) => setGlobals({...globals, labour_rate: e.target.value})} className="w-full p-2 border border-[#dcd3c9] rounded-md text-sm" />
+              <input type="number" value={globals.labour_rate} onChange={(e) => setGlobals({...globals, labour_rate: e.target.value})} className="w-full p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-[#4a443e] mb-1.5">Standard Overheads (%)</label>
-              <input type="number" value={globals.overheads_percent} onChange={(e) => setGlobals({...globals, overheads_percent: e.target.value})} className="w-full p-2 border border-[#dcd3c9] rounded-md text-sm" />
+              <input type="number" value={globals.overheads_percent} onChange={(e) => setGlobals({...globals, overheads_percent: e.target.value})} className="w-full p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-[#4a443e] mb-1.5">Target Profit Margin (%)</label>
-              <input type="number" value={globals.margin_percent} onChange={(e) => setGlobals({...globals, margin_percent: e.target.value})} className="w-full p-2 border border-[#dcd3c9] rounded-md text-sm" />
+              <input type="number" value={globals.margin_percent} onChange={(e) => setGlobals({...globals, margin_percent: e.target.value})} className="w-full p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
             </div>
           </div>
         )}
