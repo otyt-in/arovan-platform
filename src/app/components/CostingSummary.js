@@ -56,21 +56,15 @@ export default function CostingSummary({
         <table className="w-full text-[13px] border-collapse mb-6">
           <tbody>
             <tr>
-              <td className="py-2.5 border-b border-[#f0e9df] text-[#4a443e]">
-                Wood Cost<span className="block mt-0.5 text-[11px] text-[#8c8378]">{woodCft} CFT × ₹{woodRate.toLocaleString()}</span>
-              </td>
+              <td className="py-2.5 border-b border-[#f0e9df] text-[#4a443e]">Wood Cost</td>
               <td className="py-2.5 border-b border-[#f0e9df] text-right font-semibold text-[#171512]">₹{totalWood.toLocaleString()}</td>
             </tr>
             <tr>
-              <td className="py-2.5 border-b border-[#f0e9df] text-[#4a443e]">
-                Plywood Cost<span className="block mt-0.5 text-[11px] text-[#8c8378]">{plyQty} Sheets × ₹{plyRate.toLocaleString()}</span>
-              </td>
+              <td className="py-2.5 border-b border-[#f0e9df] text-[#4a443e]">Plywood Cost</td>
               <td className="py-2.5 border-b border-[#f0e9df] text-right font-semibold text-[#171512]">₹{totalPly.toLocaleString()}</td>
             </tr>
             <tr>
-              <td className="py-2.5 border-b border-[#f0e9df] text-[#4a443e]">
-                Labour Cost<span className="block mt-0.5 text-[11px] text-[#8c8378]">{labHrs} Hrs × ₹{labRate.toLocaleString()}</span>
-              </td>
+              <td className="py-2.5 border-b border-[#f0e9df] text-[#4a443e]">Labour Cost</td>
               <td className="py-2.5 border-b border-[#f0e9df] text-right font-semibold text-[#171512]">₹{totalLab.toLocaleString()}</td>
             </tr>
             <tr>
@@ -78,9 +72,7 @@ export default function CostingSummary({
               <td className="py-2.5 border-b border-[#f0e9df] text-right font-semibold text-[#171512]">₹{hardCost.toLocaleString()}</td>
             </tr>
             <tr>
-              <td className="py-2.5 border-b border-[#f0e9df] text-[#4a443e]">
-                Upholstery Cost<span className="block mt-0.5 text-[11px] text-[#8c8378]">Fabric + Foam</span>
-              </td>
+              <td className="py-2.5 border-b border-[#f0e9df] text-[#4a443e]">Upholstery Cost</td>
               <td className="py-2.5 border-b border-[#f0e9df] text-right font-semibold text-[#171512]">₹{totalUph.toLocaleString()}</td>
             </tr>
             <tr>
@@ -92,9 +84,7 @@ export default function CostingSummary({
               <td className="py-2.5 border-b border-[#f0e9df] text-right font-semibold text-[#171512]">₹{packCost.toLocaleString()}</td>
             </tr>
             <tr>
-              <td className="py-2.5 border-b border-[#f0e9df] text-[#4a443e]">
-                Overheads <span className="text-[#8c8378]">({ovPct}%)</span>
-              </td>
+              <td className="py-2.5 border-b border-[#f0e9df] text-[#4a443e]">Overheads</td>
               <td className="py-2.5 border-b border-[#f0e9df] text-right font-semibold text-[#171512]">
                 ₹{overheads.toLocaleString(undefined, {maximumFractionDigits: 0})}
               </td>
