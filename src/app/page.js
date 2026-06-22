@@ -30,10 +30,10 @@ export default function Home() {
     overheadsPercent: ''
   });
 
-  // --- ROLE BASED ACCESS CONTROL ---
-  const ADMIN_EMAILS = ['your@email.com', 'admin@company.com']; 
-  const userEmail = session?.user?.email || '';
-  const isFreelancer = session && !ADMIN_EMAILS.includes(userEmail);
+  // --- ROLE BASED ACCESS CONTROL (WITH HARDCODED ADMIN EMAIL) ---
+  const ADMIN_EMAILS = ['arovan011@gmail.com']; 
+  const userEmail = session?.user?.email?.toLowerCase() || '';
+  const isFreelancer = session && !ADMIN_EMAILS.map(e => e.toLowerCase()).includes(userEmail);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
