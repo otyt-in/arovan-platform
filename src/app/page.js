@@ -31,7 +31,6 @@ export default function Home() {
     overheadsPercent: ''
   });
 
-  // --- ROLE BASED ACCESS CONTROL (WITH HARDCODED ADMIN EMAIL) ---
   const ADMIN_EMAILS = ['arovan011@gmail.com']; 
   const userEmail = session?.user?.email?.toLowerCase() || '';
   const isFreelancer = session && !ADMIN_EMAILS.map(e => e.toLowerCase()).includes(userEmail);
@@ -108,15 +107,20 @@ export default function Home() {
   };
 
   const handleResetForm = (library = productLibrary, settings = globalSettings, woods = woodMaster, finishes = finishingMaster, plywoods = plywoodMaster) => {
+    
+    // Intelligently find the IDs for "None" and "PU Matt" from your dynamic database tables
+    const defaultPlyId = plywoods?.find(p => p.name.toLowerCase() === 'none')?.id || plywoods?.[0]?.id || '';
+    const defaultFinId = finishes?.find(f => f.name.toLowerCase().includes('pu matt'))?.id || finishes?.[0]?.id || '';
+
     setFormData({
       category: defaultCategory,
       sku: generateNextSKU(defaultCategory, library),
       name: '', image_base64: '', notes: '', inspiration: '',
       dimLength: '', dimWidth: '', dimHeight: '',
       woodTypeId: woods?.[0]?.id || '', woodCft: '', 
-      plywoodTypeId: plywoods?.[0]?.id || '', plywoodQty: '',
+      plywoodTypeId: defaultPlyId, plywoodQty: defaultPlyId === (plywoods?.find(p => p.name.toLowerCase() === 'none')?.id) ? 0 : '',
       labourHours: '', labourRate: settings?.labour_rate || '', 
-      finishingTypeId: finishes?.[0]?.id || '', hardwareCost: '',
+      finishingTypeId: defaultFinId, hardwareCost: '',
       fabricMeters: '', fabricRate: '', foamCost: '', packagingCost: '',
       overheadsPercent: settings?.overheads_percent || ''
     });

@@ -59,6 +59,10 @@ export default function CostingForm({ formData, setFormData, woodMaster, finishi
     }
   };
 
+  // Determine if "None" is the currently selected plywood
+  const selectedPly = plywoodMaster?.find(p => p.id.toString() === formData.plywoodTypeId?.toString());
+  const isPlywoodNone = selectedPly?.name?.toLowerCase() === 'none';
+
   return (
     <div className="flex flex-col gap-5">
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
@@ -162,17 +166,39 @@ export default function CostingForm({ formData, setFormData, woodMaster, finishi
             <label className="text-xs font-semibold text-[#4a443e]">Wood Quantity (CFT)</label>
             <input type="number" step="0.01" value={formData.woodCft} onChange={(e) => handleChange('woodCft', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
           </div>
+          
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-[#4a443e]">Plywood Selection</label>
-            <select value={formData.plywoodTypeId} onChange={(e) => handleChange('plywoodTypeId', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]">
-              <option value="">Select Plywood...</option>
+            <select 
+              value={formData.plywoodTypeId} 
+              onChange={(e) => { 
+                const newId = e.target.value;
+                handleChange('plywoodTypeId', newId); 
+                
+                // If "None" is selected, automatically set quantity to 0
+                const ply = plywoodMaster?.find(p => p.id.toString() === newId.toString());
+                if (ply?.name?.toLowerCase() === 'none') {
+                  handleChange('plywoodQty', 0);
+                }
+              }} 
+              className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]"
+            >
               {plywoodMaster.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-[#4a443e]">Plywood Quantity (Sheets)</label>
-            <input type="number" step="0.25" value={formData.plywoodQty} onChange={(e) => handleChange('plywoodQty', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
+            <input 
+              type="number" 
+              step="0.25" 
+              value={formData.plywoodQty} 
+              onChange={(e) => handleChange('plywoodQty', e.target.value)} 
+              disabled={isPlywoodNone}
+              className={`p-2 border border-[#dcd3c9] rounded-md text-sm transition-colors ${isPlywoodNone ? 'bg-[#f4f1eb] text-[#8c8378] cursor-not-allowed opacity-70' : 'bg-[#fdfcfb]'}`}
+              placeholder={isPlywoodNone ? "Not Applicable" : "0"}
+            />
           </div>
+
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-[#4a443e]">Labour Output (Hours)</label>
             <input type="number" value={formData.labourHours} onChange={(e) => handleChange('labourHours', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
