@@ -2,13 +2,7 @@
 import { useState } from 'react';
 import { supabase } from '../utils/supabaseClient';
 
-export default function CostingForm({ 
-  formData, 
-  setFormData, 
-  woodMaster, 
-  finishingMaster,
-  onCategoryChange 
-}) {
+export default function CostingForm({ formData, setFormData, woodMaster, finishingMaster, plywoodMaster, onCategoryChange }) {
   const [uploading, setUploading] = useState(false);
 
   const handleChange = (field, value) => {
@@ -67,7 +61,6 @@ export default function CostingForm({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* PANEL 1: IDENTITY */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
         <h3 className="text-xs uppercase font-bold tracking-wider text-[#171512] mb-4 flex items-center gap-2">
           <span className="w-5 h-5 rounded-full bg-[#171512] text-white flex items-center justify-center text-[10px]">1</span>
@@ -76,14 +69,7 @@ export default function CostingForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-[#4a443e]">Category</label>
-            <select 
-              value={formData.category} 
-              onChange={(e) => {
-                handleChange('category', e.target.value);
-                if (onCategoryChange) onCategoryChange(e.target.value);
-              }}
-              className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]"
-            >
+            <select value={formData.category} onChange={(e) => { handleChange('category', e.target.value); if (onCategoryChange) onCategoryChange(e.target.value); }} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]">
               <option value="Dining Tables">Dining Tables</option>
               <option value="Center Tables">Center Tables</option>
               <option value="Console Tables">Console Tables</option>
@@ -99,44 +85,21 @@ export default function CostingForm({
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-[#4a443e]">SKU (Editable)</label>
-            <input 
-              type="text" 
-              value={formData.sku} 
-              onChange={(e) => handleChange('sku', e.target.value)}
-              className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]"
-              placeholder="e.g. CHR-001"
-            />
+            <input type="text" value={formData.sku} onChange={(e) => handleChange('sku', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" placeholder="e.g. CHR-001" />
           </div>
           <div className="flex flex-col gap-1.5 sm:col-span-2">
             <label className="text-xs font-semibold text-[#4a443e]">Product Name</label>
-            <input 
-              type="text" 
-              value={formData.name} 
-              onChange={(e) => handleChange('name', e.target.value)}
-              className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]"
-              placeholder="e.g. Vera Tufted Dining Chair"
-            />
+            <input type="text" value={formData.name} onChange={(e) => handleChange('name', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" placeholder="e.g. Vera Tufted Dining Chair" />
           </div>
-
           <div className="flex flex-col gap-1.5 sm:col-span-2 border-t border-[#f0e9df] pt-4 mt-1">
             <label className="text-xs font-semibold text-[#4a443e]">Product Visual Reference</label>
             <div className="relative w-full border-2 border-dashed border-[#dcd3c9] rounded-lg bg-[#fdfcfb] hover:bg-[#f4f1eb] transition group overflow-hidden flex items-center justify-center min-h-[120px]">
-              <input 
-                type="file" 
-                accept="image/*" 
-                onChange={handleImageUpload} 
-                disabled={uploading}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-              />
+              <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
               {uploading ? (
                 <div className="text-sm font-medium text-[#746b61]">Optimizing & Uploading...</div>
               ) : formData.image_base64 ? (
                 <div className="flex items-center gap-4 p-4 w-full">
-                  <img 
-                    src={formData.image_base64} 
-                    alt="Uploaded preview" 
-                    className="w-20 h-20 object-cover rounded shadow-sm border border-[#e1d8cd]"
-                  />
+                  <img src={formData.image_base64} alt="Uploaded preview" className="w-20 h-20 object-cover rounded shadow-sm border border-[#e1d8cd]" />
                   <div className="flex flex-col">
                     <span className="text-xs font-bold text-green-600 mb-1">✓ Cloud Upload Successful</span>
                     <span className="text-[11px] text-[#746b61]">Click anywhere in this box to replace the image.</span>
@@ -151,30 +114,17 @@ export default function CostingForm({
               )}
             </div>
           </div>
-
           <div className="flex flex-col gap-1.5 sm:col-span-2 mt-2">
             <label className="text-xs font-semibold text-[#4a443e]">Short Description / Tagline (1-2 lines)</label>
-            <textarea 
-              value={formData.notes} 
-              onChange={(e) => handleChange('notes', e.target.value)}
-              className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb] min-h-[50px]"
-              placeholder="e.g. Monolithic slab shaped by nature..."
-            />
+            <textarea value={formData.notes} onChange={(e) => handleChange('notes', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb] min-h-[50px]" placeholder="e.g. Monolithic slab shaped by nature..." />
           </div>
-
           <div className="flex flex-col gap-1.5 sm:col-span-2">
             <label className="text-xs font-semibold text-[#4a443e]">Inspiration & Backstory (Optional)</label>
-            <textarea 
-              value={formData.inspiration} 
-              onChange={(e) => handleChange('inspiration', e.target.value)}
-              className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb] min-h-[80px]"
-              placeholder="e.g. Crafted from a single Monkey Pod slab, where the natural edge flows into the base..."
-            />
+            <textarea value={formData.inspiration} onChange={(e) => handleChange('inspiration', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb] min-h-[80px]" placeholder="e.g. Crafted from a single Monkey Pod slab..." />
           </div>
         </div>
       </div>
 
-      {/* PANEL 2: DIMENSIONS */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
         <h3 className="text-xs uppercase font-bold tracking-wider text-[#171512] mb-4 flex items-center gap-2">
           <span className="w-5 h-5 rounded-full bg-[#171512] text-white flex items-center justify-center text-[10px]">2</span>
@@ -196,7 +146,6 @@ export default function CostingForm({
         </div>
       </div>
 
-      {/* PANEL 3: MATERIALS */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
         <h3 className="text-xs uppercase font-bold tracking-wider text-[#171512] mb-4 flex items-center gap-2">
           <span className="w-5 h-5 rounded-full bg-[#171512] text-white flex items-center justify-center text-[10px]">3</span>
@@ -215,10 +164,9 @@ export default function CostingForm({
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-[#4a443e]">Plywood Selection</label>
-            <select value={formData.plywoodType} onChange={(e) => handleChange('plywoodType', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]">
-              <option value="None">None</option>
-              <option value="Commercial">Commercial Ply (₹1200/Sheet)</option>
-              <option value="Marine">Marine Ply (₹1800/Sheet)</option>
+            <select value={formData.plywoodTypeId} onChange={(e) => handleChange('plywoodTypeId', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]">
+              <option value="">Select Plywood...</option>
+              {plywoodMaster.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
             </select>
           </div>
           <div className="flex flex-col gap-1.5">

@@ -1,13 +1,6 @@
 'use client';
 
-export default function CostingSummary({ 
-  formData, 
-  globalSettings, 
-  woodMaster, 
-  finishingMaster, 
-  onSave,
-  onReset 
-}) {
+export default function CostingSummary({ formData, globalSettings, woodMaster, finishingMaster, plywoodMaster, onSave, onReset }) {
   const parseNum = (val) => parseFloat(val) || 0;
 
   const selectedWood = woodMaster?.find(w => w.id.toString() === formData.woodTypeId?.toString());
@@ -15,9 +8,8 @@ export default function CostingSummary({
   const woodCft = parseNum(formData.woodCft);
   const totalWood = woodCft * woodRate;
 
-  let plyRate = 0;
-  if (formData.plywoodType === 'Commercial') plyRate = 1200;
-  if (formData.plywoodType === 'Marine') plyRate = 1800;
+  const selectedPly = plywoodMaster?.find(p => p.id.toString() === formData.plywoodTypeId?.toString());
+  const plyRate = selectedPly ? parseNum(selectedPly.rate_per_sheet) : 0;
   const plyQty = parseNum(formData.plywoodQty);
   const totalPly = plyQty * plyRate;
 

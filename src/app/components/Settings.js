@@ -2,23 +2,23 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 
-export default function Settings({ globalSettings, woodMaster, finishingMaster, refreshData }) {
+export default function Settings({ globalSettings, woodMaster, finishingMaster, plywoodMaster, refreshData }) {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pin, setPin] = useState('');
   const [activeTab, setActiveTab] = useState('wood');
   const [isSaving, setIsSaving] = useState(false);
 
-  // Local state to hold edits before pushing to the cloud
   const [globals, setGlobals] = useState(globalSettings || { labour_rate: 300, overheads_percent: 20, margin_percent: 40 });
   const [woods, setWoods] = useState(woodMaster || []);
   const [finishes, setFinishes] = useState(finishingMaster || []);
+  const [plywoods, setPlywoods] = useState(plywoodMaster || []);
 
-  // FIX 1: Ensure local screen syncs perfectly when cloud data refreshes
   useEffect(() => {
     if (globalSettings) setGlobals(globalSettings);
     if (woodMaster) setWoods(woodMaster);
     if (finishingMaster) setFinishes(finishingMaster);
-  }, [globalSettings, woodMaster, finishingMaster]);
+    if (plywoodMaster) setPlywoods(plywoodMaster);
+  }, [globalSettings, woodMaster, finishingMaster, plywoodMaster]);
 
   const handleUnlock = (e) => {
     e.preventDefault();
@@ -33,7 +33,6 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
   const handleSaveToCloud = async () => {
     setIsSaving(true);
     try {
-      // 1. Save Globals
       if (globalSettings?.id) {
         await supabase.from('global_settings').update({
           labour_rate: parseFloat(globals.labour_rate),
@@ -42,29 +41,29 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
         }).eq('id', globalSettings.id);
       }
 
-      // FIX 2: Split Wood Master into existing updates and new inserts to prevent database key conflicts
       const existingWoods = woods.filter(w => !w.isNew).map(w => ({ id: w.id, name: w.name, rate_per_cft_premium: parseFloat(w.rate_per_cft_premium) }));
       const newWoods = woods.filter(w => w.isNew).map(w => ({ name: w.name, rate_per_cft_premium: parseFloat(w.rate_per_cft_premium) }));
-
       if (existingWoods.length > 0) await supabase.from('wood_master').upsert(existingWoods);
       if (newWoods.length > 0) await supabase.from('wood_master').insert(newWoods);
 
-      // FIX 3: Split Finishing Master into existing updates and new inserts
       const existingFinishes = finishes.filter(f => !f.isNew).map(f => ({ id: f.id, name: f.name, flat_rate: parseFloat(f.flat_rate) }));
       const newFinishes = finishes.filter(f => f.isNew).map(f => ({ name: f.name, flat_rate: parseFloat(f.flat_rate) }));
-
       if (existingFinishes.length > 0) await supabase.from('finishing_master').upsert(existingFinishes);
       if (newFinishes.length > 0) await supabase.from('finishing_master').insert(newFinishes);
 
+      const existingPlywoods = plywoods.filter(p => !p.isNew).map(p => ({ id: p.id, name: p.name, rate_per_sheet: parseFloat(p.rate_per_sheet) }));
+      const newPlywoods = plywoods.filter(p => p.isNew).map(p => ({ name: p.name, rate_per_sheet: parseFloat(p.rate_per_sheet) }));
+      if (existingPlywoods.length > 0) await supabase.from('plywood_master').upsert(existingPlywoods);
+      if (newPlywoods.length > 0) await supabase.from('plywood_master').insert(newPlywoods);
+
       alert("Settings successfully saved to the cloud!");
-      refreshData(); // Tells the main page to re-download the fresh data
+      refreshData(); 
     } catch (error) {
       alert("Error saving settings: " + error.message);
     }
     setIsSaving(false);
   };
 
-  // Row Management Functions
   const addWood = () => setWoods([...woods, { isNew: true, name: 'New Wood', rate_per_cft_premium: 0 }]);
   const deleteWood = async (index, id) => {
     if (confirm("Delete this wood type?")) {
@@ -83,28 +82,28 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
     }
   };
 
-  // --- SECURITY GATE ---
+  const addPlywood = () => setPlywoods([...plywoods, { isNew: true, name: 'New Plywood', rate_per_sheet: 0 }]);
+  const deletePlywood = async (index, id) => {
+    if (confirm("Delete this plywood type?")) {
+      if (id) await supabase.from('plywood_master').delete().eq('id', id);
+      setPlywoods(plywoods.filter((_, i) => i !== index));
+      refreshData();
+    }
+  };
+
   if (!isUnlocked) {
     return (
       <div className="flex flex-col items-center justify-center p-12 bg-white rounded-lg border border-[#e1d8cd] shadow-sm max-w-sm mx-auto mt-10">
         <h2 className="font-serif text-xl mb-2 brand-serif text-[#171512]">Admin Configuration</h2>
         <p className="text-xs text-[#746b61] mb-6 text-center">Enter PIN to manage master rates and margins.</p>
         <form onSubmit={handleUnlock} className="w-full flex flex-col gap-3">
-          <input 
-            type="password" 
-            placeholder="••••" 
-            value={pin}
-            onChange={(e) => setPin(e.target.value)}
-            className="w-full p-3 border border-[#dcd3c9] rounded-md text-center tracking-[0.5em] focus:outline-none focus:border-[#171512]"
-            autoFocus
-          />
+          <input type="password" placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value)} className="w-full p-3 border border-[#dcd3c9] rounded-md text-center tracking-[0.5em] focus:outline-none focus:border-[#171512]" autoFocus />
           <button type="submit" className="w-full py-3 bg-[#171512] text-white text-sm font-bold uppercase tracking-wider rounded-md">Unlock</button>
         </form>
       </div>
     );
   }
 
-  // --- SETTINGS UI ---
   return (
     <div className="bg-white rounded-lg border border-[#e1d8cd] shadow-sm overflow-hidden">
       <div className="p-6 border-b border-[#e1d8cd] flex justify-between items-center bg-[#fdfcfb]">
@@ -112,11 +111,7 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
           <h2 className="text-lg font-medium text-gray-800">Master Configuration</h2>
           <p className="text-xs text-[#746b61] mt-1">Changes made here affect all future product calculations.</p>
         </div>
-        <button 
-          onClick={handleSaveToCloud}
-          disabled={isSaving}
-          className="px-6 py-2.5 bg-[#171512] text-white text-xs font-bold uppercase tracking-wider rounded-md hover:opacity-90 disabled:opacity-50 transition"
-        >
+        <button onClick={handleSaveToCloud} disabled={isSaving} className="px-6 py-2.5 bg-[#171512] text-white text-xs font-bold uppercase tracking-wider rounded-md hover:opacity-90 disabled:opacity-50 transition">
           {isSaving ? 'Saving to Cloud...' : 'Save Settings'}
         </button>
       </div>
@@ -124,6 +119,7 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
       <div className="flex border-b border-[#e1d8cd] bg-[#fdfcfb]">
         <button onClick={() => setActiveTab('wood')} className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition ${activeTab === 'wood' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61] hover:text-[#171512]'}`}>Wood Master</button>
         <button onClick={() => setActiveTab('finishing')} className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition ${activeTab === 'finishing' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61] hover:text-[#171512]'}`}>Finishing Master</button>
+        <button onClick={() => setActiveTab('plywood')} className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition ${activeTab === 'plywood' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61] hover:text-[#171512]'}`}>Plywood Master</button>
         <button onClick={() => setActiveTab('globals')} className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition ${activeTab === 'globals' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61] hover:text-[#171512]'}`}>Global Margins</button>
       </div>
 
@@ -161,6 +157,24 @@ export default function Settings({ globalSettings, woodMaster, finishingMaster, 
               </div>
             ))}
             <button onClick={addFinish} className="mt-4 text-xs font-bold uppercase tracking-wider text-[#171512] border border-[#dcd3c9] px-4 py-2.5 rounded-md hover:bg-[#f4f1eb] transition">+ Add Finish Type</button>
+          </div>
+        )}
+
+        {activeTab === 'plywood' && (
+          <div className="max-w-2xl">
+            <div className="grid grid-cols-12 gap-4 mb-3 text-xs font-bold text-[#746b61] uppercase tracking-wider px-2">
+              <div className="col-span-6">Plywood Type</div>
+              <div className="col-span-4">Rate (₹ / Sheet)</div>
+              <div className="col-span-2 text-right">Action</div>
+            </div>
+            {plywoods.map((p, index) => (
+              <div key={index} className="grid grid-cols-12 gap-4 items-center mb-3">
+                <input type="text" value={p.name} onChange={(e) => { const np = [...plywoods]; np[index].name = e.target.value; setPlywoods(np); }} className="col-span-6 p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
+                <input type="number" value={p.rate_per_sheet} onChange={(e) => { const np = [...plywoods]; np[index].rate_per_sheet = e.target.value; setPlywoods(np); }} className="col-span-4 p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
+                <button onClick={() => deletePlywood(index, p.id)} className="col-span-2 text-red-400 hover:text-red-600 text-xs font-bold uppercase tracking-wider text-right px-2 transition">Delete</button>
+              </div>
+            ))}
+            <button onClick={addPlywood} className="mt-4 text-xs font-bold uppercase tracking-wider text-[#171512] border border-[#dcd3c9] px-4 py-2.5 rounded-md hover:bg-[#f4f1eb] transition">+ Add Plywood Type</button>
           </div>
         )}
 
