@@ -222,6 +222,13 @@ export default function Home() {
     }
   };
 
+  // --- HARDENED SIGN OUT FUNCTION ---
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    // Force a complete browser memory wipe to prevent "ghost" data caching
+    window.location.reload(); 
+  };
+
   // --- COMPONENT REAL-TIME SUMMATION ENGINE ---
   const calculateDynamicPrice = (item) => {
     const parseNum = (val) => parseFloat(val) || 0;
@@ -260,6 +267,10 @@ export default function Home() {
 
   // Pricing Blind Filter: Evaluates whether financial logs should be masked
   const isPricingHiddenMode = isShowroomClient || (isAdmin && clientViewActive);
+
+  if (authLoading) return <div className="flex items-center justify-center bg-[#f4f1eb] min-h-screen"><p>Loading security profile...</p></div>;
+  if (!session) return <Login />;
+  if (!globalSettings || dataLoading) return <div className="flex flex-col items-center justify-center bg-[#f4f1eb] min-h-screen text-center"><p className="text-sm font-medium text-[#746b61]">Syncing with Cloud Engine tables...</p></div>;
 
   return (
     <div className="min-h-screen bg-[#f4f1eb]">
@@ -315,7 +326,7 @@ export default function Home() {
                 {isContractor && <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-1 rounded-sm mr-4 border border-blue-100">Contractor</span>}
                 {isShowroomClient && <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-sm mr-4 border border-emerald-100">Showroom View</span>}
                 
-                <button onClick={() => supabase.auth.signOut()} className="text-[11px] font-bold text-[#8c8378] hover:text-red-600 uppercase tracking-widest transition-colors">Sign Out</button>
+                <button onClick={handleSignOut} className="text-[11px] font-bold text-[#8c8378] hover:text-red-600 uppercase tracking-widest transition-colors">Sign Out</button>
               </div>
             </div>
 
@@ -328,7 +339,7 @@ export default function Home() {
                )}
                {isContractor && <span className="text-[9px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-1 rounded-sm border border-blue-100">Contractor</span>}
                {isShowroomClient && <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-1 rounded-sm border border-emerald-100">Showroom</span>}
-               <button onClick={() => supabase.auth.signOut()} className="text-[10px] font-bold text-[#8c8378] hover:text-red-600 uppercase tracking-widest">Sign Out</button>
+               <button onClick={handleSignOut} className="text-[10px] font-bold text-[#8c8378] hover:text-red-600 uppercase tracking-widest">Sign Out</button>
             </div>
           </div>
 
