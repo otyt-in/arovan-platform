@@ -18,6 +18,8 @@ export default function Home() {
   const [productLibrary, setProductLibrary] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
   
+  // NEW: Timestamp state for live pricing
+  const [lastSyncTime, setLastSyncTime] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
   const defaultCategory = 'Dining Tables';
@@ -73,6 +75,9 @@ export default function Home() {
       if (plywoods) setPlywoodMaster(plywoods);
       if (products) setProductLibrary(products);
 
+      // Record the exact time the live rates were fetched
+      setLastSyncTime(new Date().toLocaleString());
+
       if (!formData.sku && products) {
         handleResetForm(products, settings, woods, finishes, plywoods);
       }
@@ -107,8 +112,6 @@ export default function Home() {
   };
 
   const handleResetForm = (library = productLibrary, settings = globalSettings, woods = woodMaster, finishes = finishingMaster, plywoods = plywoodMaster) => {
-    
-    // Intelligently find the IDs for "None" and "PU Matt" from your dynamic database tables
     const defaultPlyId = plywoods?.find(p => p.name.toLowerCase() === 'none')?.id || plywoods?.[0]?.id || '';
     const defaultFinId = finishes?.find(f => f.name.toLowerCase().includes('pu matt'))?.id || finishes?.[0]?.id || '';
 
@@ -150,7 +153,8 @@ export default function Home() {
       fabric_meters: parseFloat(formData.fabricMeters) || 0, fabric_rate: parseFloat(formData.fabricRate) || 0,
       foam_cost: parseFloat(formData.foamCost) || 0, packaging_cost: parseFloat(formData.packagingCost) || 0,
       overheads_percent: parseFloat(formData.overheadsPercent) || 0,
-      total_manufacturing_cost: calculatedMfgCost, estimated_selling_price: calculatedSellPrice,
+      total_manufacturing_cost: calculatedMfgCost, 
+      estimated_selling_price: calculatedSellPrice, // Kept for legacy/fallback, but UI will calculate live
       modified_at: new Date().toISOString()
     };
 
@@ -209,6 +213,36 @@ export default function Home() {
       if (error) alert("Error deleting product: " + error.message);
       else fetchAllMasterData();
     }
+  };
+
+  // --- THE ERP MAGIC: DYNAMIC PRICING ENGINE ---
+  const calculateDynamicPrice = (item) => {
+    const parseNum = (val) => parseFloat(val) || 0;
+    
+    // 1. Fetch live rates from current master state
+    const woodRate = woodMaster?.find(w => w.id === item.wood_type_id)?.rate_per_cft_premium || 0;
+    const plyRate = plywoodMaster?.find(p => p.id === item.plywood_type_id)?.rate_per_sheet || 0;
+    const finCost = finishingMaster?.find(f => f.id === item.finishing_type_id)?.flat_rate || 0;
+
+    // 2. Calculate component costs using live rates * static recipes
+    const totalWood = parseNum(item.wood_cft) * woodRate;
+    const totalPly = parseNum(item.plywood_qty) * plyRate;
+    const totalLab = parseNum(item.labour_hours) * parseNum(item.labour_rate); // Keeping labour rate as saved per product for custom works
+    const totalUph = (parseNum(item.fabric_meters) * parseNum(item.fabric_rate)) + parseNum(item.foam_cost);
+    const hardCost = parseNum(item.hardware_cost);
+    const packCost = parseNum(item.packaging_cost);
+
+    const baseCost = totalWood + totalPly + totalLab + hardCost + totalUph + finCost + packCost;
+    
+    // 3. Apply overheads and margins
+    const overheads = baseCost * (parseNum(item.overheads_percent) / 100);
+    const mfgCost = baseCost + overheads;
+    const marginPct = globalSettings?.margin_percent || 40;
+    
+    const rawSellPrice = mfgCost / (1 - (marginPct / 100));
+    
+    // 4. Return beautifully rounded figure
+    return Math.ceil(rawSellPrice / 1000) * 1000;
   };
 
   const filteredLibrary = productLibrary.filter(p => 
@@ -292,8 +326,14 @@ export default function Home() {
           <div className="bg-white p-6 lg:p-8 rounded-xl border border-[#e1d8cd] shadow-sm">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
               <div>
-                <h2 className="text-xl font-medium text-gray-900">Product Library</h2>
-                <p className="text-xs text-[#746b61] mt-1">Organized by category. Total items: {filteredLibrary.length}</p>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-xl font-medium text-gray-900">Product Library</h2>
+                  {/* LIVE PRICING TIMESTAMP */}
+                  <span className="px-2.5 py-1 bg-green-50 text-green-700 border border-green-200 rounded-md text-[9px] font-bold uppercase tracking-widest shadow-sm">
+                    Live Pricing Synced: {lastSyncTime}
+                  </span>
+                </div>
+                <p className="text-xs text-[#746b61] mt-2">Organized by category. Total items: {filteredLibrary.length}</p>
               </div>
               <div className="w-full sm:w-80">
                 <input type="text" placeholder="🔍 Search by SKU or Name..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full p-3 border border-[#dcd3c9] rounded-lg text-sm bg-[#fdfcfb] focus:outline-none focus:border-[#171512] focus:ring-1 focus:ring-[#171512] transition-shadow" />
@@ -318,6 +358,9 @@ export default function Home() {
                         {items.map(item => {
                           const woodName = woodMaster.find(w => w.id === item.wood_type_id)?.name || 'Custom Wood';
                           const dateModified = new Date(item.modified_at).toLocaleDateString();
+                          
+                          // DYNAMIC PRICE GENERATOR HOOK
+                          const dynamicPrice = calculateDynamicPrice(item);
 
                           return (
                             <div key={item.sku} className="bg-white border border-[#e1d8cd] rounded-xl overflow-hidden hover:shadow-md hover:border-[#dcd3c9] transition-all duration-200 flex flex-col group/card h-full">
@@ -335,7 +378,8 @@ export default function Home() {
                                 <div className="flex-1">
                                   <div className="flex justify-between items-start mb-3">
                                     <span className="text-[10px] font-bold bg-[#171512] px-2.5 py-1 rounded text-white tracking-widest">{item.sku}</span>
-                                    <span className="text-sm font-bold text-[#171512]">₹{item.estimated_selling_price?.toLocaleString()}</span>
+                                    {/* RENDERING DYNAMIC PRICE INSTEAD OF SAVED PRICE */}
+                                    <span className="text-sm font-bold text-[#171512]">₹{dynamicPrice.toLocaleString()}</span>
                                   </div>
                                   <h3 className="font-semibold text-gray-900 text-sm mb-1.5 leading-tight">{item.name}</h3>
                                   {item.notes && <p className="text-xs text-[#746b61] italic line-clamp-2 mb-3 leading-relaxed">{item.notes}</p>}
