@@ -18,9 +18,11 @@ export default function Home() {
   const [productLibrary, setProductLibrary] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
   
-  // NEW: Timestamp state for live pricing
   const [lastSyncTime, setLastSyncTime] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Presentation State: Allows admin to mask pricing arrays instantly
+  const [clientViewActive, setClientViewActive] = useState(false);
 
   const defaultCategory = 'Dining Tables';
   
@@ -33,9 +35,14 @@ export default function Home() {
     overheadsPercent: ''
   });
 
+  // --- ROLE BASED ACCESS CONTROL SYSTEM ---
   const ADMIN_EMAILS = ['arovan011@gmail.com']; 
+  const CONTRACTOR_EMAILS = ['freelancer@arovan.com', 'designer@arovan.com']; 
+  
   const userEmail = session?.user?.email?.toLowerCase() || '';
-  const isFreelancer = session && !ADMIN_EMAILS.map(e => e.toLowerCase()).includes(userEmail);
+  const isAdmin = ADMIN_EMAILS.map(e => e.toLowerCase()).includes(userEmail);
+  const isContractor = CONTRACTOR_EMAILS.map(e => e.toLowerCase()).includes(userEmail);
+  const isShowroomClient = session && !isAdmin && !isContractor;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -48,11 +55,12 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Strict View Gate: Non-admins cannot manipulate raw parameters or engine values
   useEffect(() => {
-    if (isFreelancer && activeView !== 'library') {
+    if (!isAdmin && activeView !== 'library') {
       setActiveView('library');
     }
-  }, [isFreelancer, activeView]);
+  }, [isAdmin, activeView]);
 
   useEffect(() => {
     if (session) {
@@ -75,7 +83,6 @@ export default function Home() {
       if (plywoods) setPlywoodMaster(plywoods);
       if (products) setProductLibrary(products);
 
-      // Record the exact time the live rates were fetched
       setLastSyncTime(new Date().toLocaleString());
 
       if (!formData.sku && products) {
@@ -154,7 +161,7 @@ export default function Home() {
       foam_cost: parseFloat(formData.foamCost) || 0, packaging_cost: parseFloat(formData.packagingCost) || 0,
       overheads_percent: parseFloat(formData.overheadsPercent) || 0,
       total_manufacturing_cost: calculatedMfgCost, 
-      estimated_selling_price: calculatedSellPrice, // Kept for legacy/fallback, but UI will calculate live
+      estimated_selling_price: calculatedSellPrice,
       modified_at: new Date().toISOString()
     };
 
@@ -215,33 +222,27 @@ export default function Home() {
     }
   };
 
-  // --- THE ERP MAGIC: DYNAMIC PRICING ENGINE ---
+  // --- COMPONENT REAL-TIME SUMMATION ENGINE ---
   const calculateDynamicPrice = (item) => {
     const parseNum = (val) => parseFloat(val) || 0;
     
-    // 1. Fetch live rates from current master state
     const woodRate = woodMaster?.find(w => w.id === item.wood_type_id)?.rate_per_cft_premium || 0;
     const plyRate = plywoodMaster?.find(p => p.id === item.plywood_type_id)?.rate_per_sheet || 0;
     const finCost = finishingMaster?.find(f => f.id === item.finishing_type_id)?.flat_rate || 0;
 
-    // 2. Calculate component costs using live rates * static recipes
     const totalWood = parseNum(item.wood_cft) * woodRate;
     const totalPly = parseNum(item.plywood_qty) * plyRate;
-    const totalLab = parseNum(item.labour_hours) * parseNum(item.labour_rate); // Keeping labour rate as saved per product for custom works
+    const totalLab = parseNum(item.labour_hours) * parseNum(item.labour_rate);
     const totalUph = (parseNum(item.fabric_meters) * parseNum(item.fabric_rate)) + parseNum(item.foam_cost);
     const hardCost = parseNum(item.hardware_cost);
     const packCost = parseNum(item.packaging_cost);
 
     const baseCost = totalWood + totalPly + totalLab + hardCost + totalUph + finCost + packCost;
-    
-    // 3. Apply overheads and margins
     const overheads = baseCost * (parseNum(item.overheads_percent) / 100);
     const mfgCost = baseCost + overheads;
     const marginPct = globalSettings?.margin_percent || 40;
     
     const rawSellPrice = mfgCost / (1 - (marginPct / 100));
-    
-    // 4. Return beautifully rounded figure
     return Math.ceil(rawSellPrice / 1000) * 1000;
   };
 
@@ -257,15 +258,15 @@ export default function Home() {
     return groups;
   }, {});
 
-  if (authLoading) return <div className="flex items-center justify-center bg-[#f4f1eb] min-h-screen"><p>Loading security profile...</p></div>;
-  if (!session) return <Login />;
-  if (!globalSettings || dataLoading) return <div className="flex flex-col items-center justify-center bg-[#f4f1eb] min-h-screen text-center"><p className="text-sm font-medium text-[#746b61]">Syncing with Cloud Engine tables...</p></div>;
+  // Pricing Blind Filter: Evaluates whether financial logs should be masked
+  const isPricingHiddenMode = isShowroomClient || (isAdmin && clientViewActive);
 
   return (
     <div className="min-h-screen bg-[#f4f1eb]">
       <header className="bg-white border-b border-[#e1d8cd] sticky top-0 z-30 shadow-sm">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-8">
           <div className="flex justify-between items-center h-16 sm:h-20">
+            
             <div className="flex items-center gap-4 sm:gap-6">
               <img src="/Logo_1600x900.jpeg" alt="Arovan Logo" className="h-8 sm:h-12 object-contain" />
               <div className="hidden sm:block h-8 w-px bg-[#e1d8cd]"></div>
@@ -274,9 +275,10 @@ export default function Home() {
               </p>
             </div>
 
+            {/* Desktop Navigation */}
             <div className="hidden md:flex items-center h-full">
               <nav className="flex h-full mr-8 gap-2">
-                {!isFreelancer && (
+                {isAdmin && (
                   <>
                     <button onClick={() => setActiveView('workspace')} className={`px-4 text-xs font-bold uppercase tracking-widest h-full border-b-2 transition-colors flex items-center ${activeView === 'workspace' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#8c8378] hover:text-[#171512]'}`}>Workspace</button>
                     <button onClick={() => setActiveView('library')} className={`px-4 text-xs font-bold uppercase tracking-widest h-full border-b-2 transition-colors flex items-center ${activeView === 'library' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#8c8378] hover:text-[#171512]'}`}>Library ({productLibrary.length})</button>
@@ -286,21 +288,52 @@ export default function Home() {
                     </button>
                   </>
                 )}
+                {isContractor && (
+                  <button className="px-4 text-xs font-bold uppercase tracking-widest h-full border-b-2 border-[#171512] text-[#171512] flex items-center">
+                    Product Library ({productLibrary.length})
+                  </button>
+                )}
+                {isShowroomClient && (
+                  <button className="px-4 text-xs font-bold uppercase tracking-widest h-full border-b-2 border-[#171512] text-[#171512] flex items-center">
+                    Lookbook ({productLibrary.length})
+                  </button>
+                )}
               </nav>
               
               <div className="flex items-center pl-8 border-l border-[#e1d8cd] h-8">
-                {isFreelancer && <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-1 rounded-sm mr-4 border border-blue-100">Contractor</span>}
+                {/* Admin-only presentation slider hook */}
+                {isAdmin && (
+                  <div className="flex items-center gap-3 mr-6 bg-[#faf9f6] border border-[#e1d8cd] rounded-full py-1 px-3.5 shadow-inner">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#746b61]">Client View</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={clientViewActive} onChange={(e) => setClientViewActive(e.target.checked)} className="sr-only peer" />
+                      <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#171512]"></div>
+                    </label>
+                  </div>
+                )}
+
+                {isContractor && <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-1 rounded-sm mr-4 border border-blue-100">Contractor</span>}
+                {isShowroomClient && <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-sm mr-4 border border-emerald-100">Showroom View</span>}
+                
                 <button onClick={() => supabase.auth.signOut()} className="text-[11px] font-bold text-[#8c8378] hover:text-red-600 uppercase tracking-widest transition-colors">Sign Out</button>
               </div>
             </div>
 
+            {/* Mobile Actions Header Layer */}
             <div className="md:hidden flex items-center gap-3">
-               {isFreelancer && <span className="text-[9px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-1 rounded-sm border border-blue-100">Contractor</span>}
+               {isAdmin && (
+                 <button onClick={() => setClientViewActive(!clientViewActive)} className={`px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-wider border transition-colors ${clientViewActive ? 'bg-[#171512] border-[#171512] text-white' : 'bg-white border-[#e1d8cd] text-[#746b61]'}`}>
+                   {clientViewActive ? 'Exit Client View' : 'Client View'}
+                 </button>
+               )}
+               {isContractor && <span className="text-[9px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-1 rounded-sm border border-blue-100">Contractor</span>}
+               {isShowroomClient && <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-1 rounded-sm border border-emerald-100">Showroom</span>}
                <button onClick={() => supabase.auth.signOut()} className="text-[10px] font-bold text-[#8c8378] hover:text-red-600 uppercase tracking-widest">Sign Out</button>
             </div>
           </div>
 
-          {!isFreelancer && (
+          {/* Mobile Tab Fallback */}
+          {isAdmin && (
             <div className="md:hidden flex items-center overflow-x-auto no-scrollbar gap-2 pb-3 pt-1">
               <button onClick={() => setActiveView('workspace')} className={`whitespace-nowrap px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-full transition-colors ${activeView === 'workspace' ? 'bg-[#171512] text-white' : 'bg-[#f4f1eb] text-[#746b61]'}`}>Workspace</button>
               <button onClick={() => setActiveView('library')} className={`whitespace-nowrap px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-full transition-colors ${activeView === 'library' ? 'bg-[#171512] text-white' : 'bg-[#f4f1eb] text-[#746b61]'}`}>Library ({productLibrary.length})</button>
@@ -311,7 +344,7 @@ export default function Home() {
       </header>
 
       <main className="max-w-[1400px] mx-auto p-4 sm:p-6 lg:p-8">
-        {activeView === 'workspace' && !isFreelancer && (
+        {activeView === 'workspace' && isAdmin && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 items-start">
             <div className="col-span-1 lg:col-span-2">
               <CostingForm formData={formData} setFormData={setFormData} woodMaster={woodMaster} finishingMaster={finishingMaster} plywoodMaster={plywoodMaster} onCategoryChange={handleCategoryChange} />
@@ -326,12 +359,20 @@ export default function Home() {
           <div className="bg-white p-6 lg:p-8 rounded-xl border border-[#e1d8cd] shadow-sm">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
               <div>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-xl font-medium text-gray-900">Product Library</h2>
-                  {/* LIVE PRICING TIMESTAMP */}
-                  <span className="px-2.5 py-1 bg-green-50 text-green-700 border border-green-200 rounded-md text-[9px] font-bold uppercase tracking-widest shadow-sm">
-                    Live Pricing Synced: {lastSyncTime}
-                  </span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className="text-xl font-medium text-gray-900">
+                    {isPricingHiddenMode ? 'Design Lookbook' : 'Product Library'}
+                  </h2>
+                  {!isPricingHiddenMode && (
+                    <span className="px-2.5 py-1 bg-green-50 text-green-700 border border-green-200 rounded-md text-[9px] font-bold uppercase tracking-widest shadow-sm">
+                      Live Pricing Synced: {lastSyncTime}
+                    </span>
+                  )}
+                  {isPricingHiddenMode && (
+                    <span className="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-md text-[9px] font-bold uppercase tracking-widest shadow-sm">
+                      Client View Active
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-[#746b61] mt-2">Organized by category. Total items: {filteredLibrary.length}</p>
               </div>
@@ -358,8 +399,6 @@ export default function Home() {
                         {items.map(item => {
                           const woodName = woodMaster.find(w => w.id === item.wood_type_id)?.name || 'Custom Wood';
                           const dateModified = new Date(item.modified_at).toLocaleDateString();
-                          
-                          // DYNAMIC PRICE GENERATOR HOOK
                           const dynamicPrice = calculateDynamicPrice(item);
 
                           return (
@@ -378,8 +417,13 @@ export default function Home() {
                                 <div className="flex-1">
                                   <div className="flex justify-between items-start mb-3">
                                     <span className="text-[10px] font-bold bg-[#171512] px-2.5 py-1 rounded text-white tracking-widest">{item.sku}</span>
-                                    {/* RENDERING DYNAMIC PRICE INSTEAD OF SAVED PRICE */}
-                                    <span className="text-sm font-bold text-[#171512]">₹{dynamicPrice.toLocaleString()}</span>
+                                    
+                                    {/* MASK PRICING ARRAY DEPENDING ON STATE */}
+                                    {!isPricingHiddenMode ? (
+                                      <span className="text-sm font-bold text-[#171512]">₹{dynamicPrice.toLocaleString()}</span>
+                                    ) : (
+                                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#8c8378] bg-[#f4f1eb] px-2 py-0.5 rounded">Exquisite Craft</span>
+                                    )}
                                   </div>
                                   <h3 className="font-semibold text-gray-900 text-sm mb-1.5 leading-tight">{item.name}</h3>
                                   {item.notes && <p className="text-xs text-[#746b61] italic line-clamp-2 mb-3 leading-relaxed">{item.notes}</p>}
@@ -398,7 +442,7 @@ export default function Home() {
                                 </div>
                                 <div className="mt-5 pt-4 border-t border-[#f0e9df] flex items-center justify-between shrink-0">
                                   <span className="text-[9px] font-semibold text-[#8c8378] uppercase tracking-widest">Upd: {dateModified}</span>
-                                  {!isFreelancer && (
+                                  {isAdmin && !isPricingHiddenMode && (
                                     <div className="flex gap-3">
                                       <button onClick={() => handleEditProduct(item)} className="text-[10px] font-bold text-[#746b61] hover:text-[#171512] transition-colors uppercase tracking-wider">Edit</button>
                                       <button onClick={() => handleDuplicateProduct(item)} className="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors uppercase tracking-wider">Dup</button>
@@ -419,7 +463,7 @@ export default function Home() {
           </div>
         )}
 
-        {activeView === 'settings' && !isFreelancer && (
+        {activeView === 'settings' && isAdmin && (
           <Settings globalSettings={globalSettings} woodMaster={woodMaster} finishingMaster={finishingMaster} plywoodMaster={plywoodMaster} refreshData={fetchAllMasterData} />
         )}
       </main>
