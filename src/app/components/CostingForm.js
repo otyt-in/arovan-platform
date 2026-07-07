@@ -59,7 +59,6 @@ export default function CostingForm({ formData, setFormData, woodMaster, finishi
     }
   };
 
-  // Determine if "None" is the currently selected plywood
   const selectedPly = plywoodMaster?.find(p => p.id.toString() === formData.plywoodTypeId?.toString());
   const isPlywoodNone = selectedPly?.name?.toLowerCase() === 'none';
 
@@ -175,7 +174,6 @@ export default function CostingForm({ formData, setFormData, woodMaster, finishi
                 const newId = e.target.value;
                 handleChange('plywoodTypeId', newId); 
                 
-                // If "None" is selected, automatically set quantity to 0
                 const ply = plywoodMaster?.find(p => p.id.toString() === newId.toString());
                 if (ply?.name?.toLowerCase() === 'none') {
                   handleChange('plywoodQty', 0);
@@ -214,8 +212,8 @@ export default function CostingForm({ formData, setFormData, woodMaster, finishi
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Hardware Components (₹)</label>
-            <input type="number" value={formData.hardwareCost} onChange={(e) => handleChange('hardwareCost', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
+            <label className="text-xs font-semibold text-[#4a443e]">Hardware & Misc. Materials (₹)</label>
+            <input type="number" value={formData.hardwareCost} onChange={(e) => handleChange('hardwareCost', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" placeholder="Brass, Cane, Legs, etc." />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-[#4a443e]">Fabric Yards (Meters)</label>

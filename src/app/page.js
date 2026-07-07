@@ -21,7 +21,6 @@ export default function Home() {
   const [lastSyncTime, setLastSyncTime] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Presentation State: Allows admin to mask pricing arrays instantly
   const [clientViewActive, setClientViewActive] = useState(false);
 
   const defaultCategory = 'Dining Tables';
@@ -35,7 +34,6 @@ export default function Home() {
     overheadsPercent: ''
   });
 
-  // --- ROLE BASED ACCESS CONTROL SYSTEM ---
   const ADMIN_EMAILS = ['arovan011@gmail.com']; 
   const CONTRACTOR_EMAILS = ['freelancer@arovan.com', 'designer@arovan.com']; 
   
@@ -55,7 +53,6 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Strict View Gate: Non-admins cannot manipulate raw parameters or engine values
   useEffect(() => {
     if (!isAdmin && activeView !== 'library') {
       setActiveView('library');
@@ -222,14 +219,11 @@ export default function Home() {
     }
   };
 
-  // --- HARDENED SIGN OUT FUNCTION ---
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    // Force a complete browser memory wipe to prevent "ghost" data caching
     window.location.reload(); 
   };
 
-  // --- COMPONENT REAL-TIME SUMMATION ENGINE ---
   const calculateDynamicPrice = (item) => {
     const parseNum = (val) => parseFloat(val) || 0;
     
@@ -265,7 +259,6 @@ export default function Home() {
     return groups;
   }, {});
 
-  // Pricing Blind Filter: Evaluates whether financial logs should be masked
   const isPricingHiddenMode = isShowroomClient || (isAdmin && clientViewActive);
 
   if (authLoading) return <div className="flex items-center justify-center bg-[#f4f1eb] min-h-screen"><p>Loading security profile...</p></div>;
@@ -286,7 +279,6 @@ export default function Home() {
               </p>
             </div>
 
-            {/* Desktop Navigation */}
             <div className="hidden md:flex items-center h-full">
               <nav className="flex h-full mr-8 gap-2">
                 {isAdmin && (
@@ -312,7 +304,6 @@ export default function Home() {
               </nav>
               
               <div className="flex items-center pl-8 border-l border-[#e1d8cd] h-8">
-                {/* Admin-only presentation slider hook */}
                 {isAdmin && (
                   <div className="flex items-center gap-3 mr-6 bg-[#faf9f6] border border-[#e1d8cd] rounded-full py-1 px-3.5 shadow-inner">
                     <span className="text-[10px] font-bold uppercase tracking-widest text-[#746b61]">Client View</span>
@@ -322,15 +313,12 @@ export default function Home() {
                     </label>
                   </div>
                 )}
-
                 {isContractor && <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-1 rounded-sm mr-4 border border-blue-100">Contractor</span>}
                 {isShowroomClient && <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-sm mr-4 border border-emerald-100">Showroom View</span>}
-                
                 <button onClick={handleSignOut} className="text-[11px] font-bold text-[#8c8378] hover:text-red-600 uppercase tracking-widest transition-colors">Sign Out</button>
               </div>
             </div>
 
-            {/* Mobile Actions Header Layer */}
             <div className="md:hidden flex items-center gap-3">
                {isAdmin && (
                  <button onClick={() => setClientViewActive(!clientViewActive)} className={`px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-wider border transition-colors ${clientViewActive ? 'bg-[#171512] border-[#171512] text-white' : 'bg-white border-[#e1d8cd] text-[#746b61]'}`}>
@@ -343,7 +331,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Mobile Tab Fallback */}
           {isAdmin && (
             <div className="md:hidden flex items-center overflow-x-auto no-scrollbar gap-2 pb-3 pt-1">
               <button onClick={() => setActiveView('workspace')} className={`whitespace-nowrap px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-full transition-colors ${activeView === 'workspace' ? 'bg-[#171512] text-white' : 'bg-[#f4f1eb] text-[#746b61]'}`}>Workspace</button>
@@ -411,6 +398,13 @@ export default function Home() {
                           const woodName = woodMaster.find(w => w.id === item.wood_type_id)?.name || 'Custom Wood';
                           const dateModified = new Date(item.modified_at).toLocaleDateString();
                           const dynamicPrice = calculateDynamicPrice(item);
+                          
+                          // Dynamically construct dimensions string
+                          const dimParts = [];
+                          if (item.dim_length) dimParts.push(`${item.dim_length}"L`);
+                          if (item.dim_width) dimParts.push(`${item.dim_width}"W`);
+                          if (item.dim_height) dimParts.push(`${item.dim_height}"H`);
+                          const dimString = dimParts.length > 0 ? ` | 📏 ${dimParts.join(' × ')}` : '';
 
                           return (
                             <div key={item.sku} className="bg-white border border-[#e1d8cd] rounded-xl overflow-hidden hover:shadow-md hover:border-[#dcd3c9] transition-all duration-200 flex flex-col group/card h-full">
@@ -429,7 +423,6 @@ export default function Home() {
                                   <div className="flex justify-between items-start mb-3">
                                     <span className="text-[10px] font-bold bg-[#171512] px-2.5 py-1 rounded text-white tracking-widest">{item.sku}</span>
                                     
-                                    {/* MASK PRICING ARRAY DEPENDING ON STATE */}
                                     {!isPricingHiddenMode ? (
                                       <span className="text-sm font-bold text-[#171512]">₹{dynamicPrice.toLocaleString()}</span>
                                     ) : (
@@ -438,7 +431,10 @@ export default function Home() {
                                   </div>
                                   <h3 className="font-semibold text-gray-900 text-sm mb-1.5 leading-tight">{item.name}</h3>
                                   {item.notes && <p className="text-xs text-[#746b61] italic line-clamp-2 mb-3 leading-relaxed">{item.notes}</p>}
-                                  <p className="text-[11px] font-medium text-[#8c8378]">{woodName}</p>
+                                  
+                                  {/* RENDER DYNAMIC DIMENSIONS NEXT TO WOOD TYPE */}
+                                  <p className="text-[11px] font-medium text-[#8c8378]">{woodName}{dimString}</p>
+                                  
                                   {item.inspiration && (
                                     <details className="mt-4 text-xs text-[#746b61] group/story">
                                       <summary className="cursor-pointer font-bold uppercase tracking-wider underline decoration-[#dcd3c9] underline-offset-4 hover:text-[#171512] transition-colors list-none">

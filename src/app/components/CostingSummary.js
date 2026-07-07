@@ -60,7 +60,7 @@ export default function CostingSummary({ formData, globalSettings, woodMaster, f
               <td className="py-2.5 border-b border-[#f0e9df] text-right font-semibold text-[#171512]">₹{totalLab.toLocaleString()}</td>
             </tr>
             <tr>
-              <td className="py-2.5 border-b border-[#f0e9df] text-[#4a443e]">Hardware Cost</td>
+              <td className="py-2.5 border-b border-[#f0e9df] text-[#4a443e]">Hardware & Misc. Cost</td>
               <td className="py-2.5 border-b border-[#f0e9df] text-right font-semibold text-[#171512]">₹{hardCost.toLocaleString()}</td>
             </tr>
             <tr>
