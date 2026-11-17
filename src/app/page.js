@@ -6,472 +6,770 @@ import CostingForm from './components/CostingForm';
 import CostingSummary from './components/CostingSummary';
 import Settings from './components/Settings';
 
+const CATEGORY_PREFIXES = {
+  'Dining Tables': 'DT',
+  'Center Tables': 'CT',
+  'Console Tables': 'CON',
+  'Nesting Table': 'NT',
+  'End Tables': 'ET',
+  'Benches': 'BNC',
+  'Sofas': 'SOF',
+  'Chairs': 'CHR',
+  'High Stools': 'HST',
+  'Beds': 'BED',
+  'Custom': 'CUS'
+};
+
+// ROLE-BASED ACCESS LISTS (Lowercase)
+const ADMIN_EMAILS = ['arovan011@gmail.com'];
+const FREELANCER_EMAILS = ['freelancer@arovan.com'];
+
 export default function Home() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  
+
+  // App Master States
   const [activeView, setActiveView] = useState('workspace');
-  const [globalSettings, setGlobalSettings] = useState(null);
   const [woodMaster, setWoodMaster] = useState([]);
-  const [finishingMaster, setFinishingMaster] = useState([]);
-  const [plywoodMaster, setPlywoodMaster] = useState([]);
+  const [addonsMaster, setAddonsMaster] = useState([]);
   const [productLibrary, setProductLibrary] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
-  
   const [lastSyncTime, setLastSyncTime] = useState('');
+
+  // Library UI States
   const [searchQuery, setSearchQuery] = useState('');
+  const [openCategories, setOpenCategories] = useState({});
+  const [editingSku, setEditingSku] = useState(null);
 
-  const [clientViewActive, setClientViewActive] = useState(false);
+  // Admin Presentation Toggle ("Client View") & Per-Product Reveal Map
+  const [clientViewMode, setClientViewMode] = useState(false);
+  const [revealedPrices, setRevealedPrices] = useState({});
 
-  const defaultCategory = 'Dining Tables';
-  
+  // Form State
   const [formData, setFormData] = useState({
-    category: defaultCategory, sku: '', name: '', image_base64: '', notes: '', inspiration: '',
-    dimLength: '', dimWidth: '', dimHeight: '',
-    woodTypeId: '', woodCft: '', plywoodTypeId: '', plywoodQty: '',
-    labourHours: '', labourRate: '', finishingTypeId: '', hardwareCost: '',
-    fabricMeters: '', fabricRate: '', foamCost: '', packagingCost: '',
-    overheadsPercent: ''
+    category: 'Dining Tables',
+    sku: '',
+    name: '',
+    image_base64: '',
+    notes: '',
+    inspiration: '',
+    dimLength: '',
+    dimWidth: '',
+    dimHeight: '',
+    woodTypeId: '',
+    woodCft: '',
+    multiplier: '',
+    rattanSqft: '',
+    cushionQty: '',
+    packagingCost: '',
+    addons: []
   });
 
-  const ADMIN_EMAILS = ['arovan011@gmail.com']; 
-  const CONTRACTOR_EMAILS = ['freelancer@arovan.com', 'designer@arovan.com']; 
-  
+  // Determine User Role
   const userEmail = session?.user?.email?.toLowerCase() || '';
-  const isAdmin = ADMIN_EMAILS.map(e => e.toLowerCase()).includes(userEmail);
-  const isContractor = CONTRACTOR_EMAILS.map(e => e.toLowerCase()).includes(userEmail);
-  const isShowroomClient = session && !isAdmin && !isContractor;
+  const isAdmin = ADMIN_EMAILS.includes(userEmail);
+  const isFreelancer = FREELANCER_EMAILS.includes(userEmail);
+  const isShowroom = session && !isAdmin && !isFreelancer;
 
+  // Hide prices by default for Showroom users OR when Admin toggles Client View ON
+  const defaultHidePrices = isShowroom || (isAdmin && clientViewMode);
+
+  // 1. MONITOR AUTH SESSION
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setAuthLoading(false);
     });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
+
     return () => subscription.unsubscribe();
   }, []);
 
+  // Force non-admins into Library view
   useEffect(() => {
-    if (!isAdmin && activeView !== 'library') {
+    if (session && !isAdmin) {
       setActiveView('library');
     }
-  }, [isAdmin, activeView]);
+  }, [session, isAdmin]);
 
+  // 2. FETCH MASTER DATA
   useEffect(() => {
     if (session) {
       fetchAllMasterData();
     }
   }, [session]);
 
+  const generateSmartSku = (category, existingProducts = productLibrary) => {
+    const prefix = CATEGORY_PREFIXES[category] || 'PRD';
+    const matchingNumbers = existingProducts
+      .map(p => p.sku)
+      .filter(sku => sku && sku.startsWith(`${prefix}-`))
+      .map(sku => parseInt(sku.replace(`${prefix}-`, ''), 10))
+      .filter(num => !isNaN(num));
+
+    const nextNum = matchingNumbers.length > 0 ? Math.max(...matchingNumbers) + 1 : 1;
+    return `${prefix}-${String(nextNum).padStart(3, '0')}`;
+  };
+
   const fetchAllMasterData = async () => {
     setDataLoading(true);
     try {
-      const { data: settings } = await supabase.from('global_settings').select('*').single();
-      const { data: woods } = await supabase.from('wood_master').select('*').order('name');
-      const { data: finishes } = await supabase.from('finishing_master').select('*').order('name');
-      const { data: plywoods } = await supabase.from('plywood_master').select('*').order('name');
-      const { data: products } = await supabase.from('product_master').select('*').order('modified_at', { ascending: false });
+      const [woodsRes, addonsRes, productsRes] = await Promise.all([
+        supabase.from('wood_master').select('*').order('name'),
+        supabase.from('addons_master').select('*').order('id'),
+        supabase.from('product_master').select('*').order('modified_at', { ascending: false })
+      ]);
 
-      if (settings) setGlobalSettings(settings);
-      if (woods) setWoodMaster(woods);
-      if (finishes) setFinishingMaster(finishes);
-      if (plywoods) setPlywoodMaster(plywoods);
-      if (products) setProductLibrary(products);
+      const woods = woodsRes.data || [];
+      const addons = addonsRes.data || [];
+      const products = productsRes.data || [];
 
-      setLastSyncTime(new Date().toLocaleString());
+      setWoodMaster(woods);
+      setAddonsMaster(addons);
+      setProductLibrary(products);
+      setLastSyncTime(
+        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      );
 
-      if (!formData.sku && products) {
-        handleResetForm(products, settings, woods, finishes, plywoods);
-      }
+      setFormData(prev => ({
+        ...prev,
+        woodTypeId: prev.woodTypeId || woods[0]?.id || '',
+        sku: prev.sku || generateSmartSku(prev.category, products)
+      }));
     } catch (err) {
-      console.error("Error reading database tables:", err);
+      console.error('Error fetching master data:', err);
     } finally {
       setDataLoading(false);
     }
   };
 
-  const getCategoryPrefix = (category) => {
-    const map = {
-      'Dining Tables': 'DT', 'Center Tables': 'CT', 'Console Tables': 'CON',
-      'Nesting Table': 'NST', 'End Tables': 'ET', 'Benches': 'BEN',
-      'Sofas': 'SOF', 'Chairs': 'CHR', 'High Stools': 'HST', 'Beds': 'BED', 'Custom': 'CUS'
-    };
-    return map[category] || 'CUS';
+  // --- LIVE DYNAMIC ERP PRICE CALCULATOR ---
+  const calculateDynamicPrice = (product) => {
+    const cft = parseFloat(product.wood_cft) || 0;
+    const mult = parseFloat(product.multiplier) || 0;
+    const baseWoodCost = cft * mult;
+
+    const rattanMaster = addonsMaster.find(a => a.name.toLowerCase() === 'rattan');
+    const cushionMaster = addonsMaster.find(a => a.name.toLowerCase().includes('cushion'));
+
+    const rattanCost = (parseFloat(product.rattan_sqft) || 0) * (rattanMaster?.rate || 0);
+    const cushionCost = (parseFloat(product.cushion_qty) || 0) * (cushionMaster?.rate || 0);
+
+    const miscList = Array.isArray(product.addons) ? product.addons : [];
+    const miscCost = miscList.reduce((sum, item) => {
+      const master = addonsMaster.find(a => a.id === item.addon_id);
+      return sum + (parseFloat(item.qty) || 0) * (master?.rate || 0);
+    }, 0);
+
+    const packagingCost = parseFloat(product.packaging_cost) || 0;
+
+    const rawTotal = baseWoodCost + rattanCost + cushionCost + miscCost + packagingCost;
+    return rawTotal > 0 ? Math.ceil(rawTotal / 1000) * 1000 : 0;
   };
 
-  const generateNextSKU = (category, currentLibrary = productLibrary) => {
-    const prefix = getCategoryPrefix(category);
-    const existingIds = currentLibrary
-      .filter(p => p.sku && p.sku.startsWith(prefix + '-'))
-      .map(p => parseInt(p.sku.replace(prefix + '-', '')) || 0);
-    const nextId = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
-    return `${prefix}-${nextId.toString().padStart(3, '0')}`;
-  };
-
+  // --- FORM ACTIONS ---
   const handleCategoryChange = (newCategory) => {
-    const newSku = generateNextSKU(newCategory);
-    setFormData(prev => ({ ...prev, sku: newSku, category: newCategory }));
+    if (!editingSku) {
+      setFormData(prev => ({
+        ...prev,
+        category: newCategory,
+        sku: generateSmartSku(newCategory)
+      }));
+    }
   };
 
-  const handleResetForm = (library = productLibrary, settings = globalSettings, woods = woodMaster, finishes = finishingMaster, plywoods = plywoodMaster) => {
-    const defaultPlyId = plywoods?.find(p => p.name.toLowerCase() === 'none')?.id || plywoods?.[0]?.id || '';
-    const defaultFinId = finishes?.find(f => f.name.toLowerCase().includes('pu matt'))?.id || finishes?.[0]?.id || '';
-
+  const handleResetForm = () => {
+    setEditingSku(null);
+    const defaultCat = 'Dining Tables';
     setFormData({
-      category: defaultCategory,
-      sku: generateNextSKU(defaultCategory, library),
-      name: '', image_base64: '', notes: '', inspiration: '',
-      dimLength: '', dimWidth: '', dimHeight: '',
-      woodTypeId: woods?.[0]?.id || '', woodCft: '', 
-      plywoodTypeId: defaultPlyId, plywoodQty: defaultPlyId === (plywoods?.find(p => p.name.toLowerCase() === 'none')?.id) ? 0 : '',
-      labourHours: '', labourRate: settings?.labour_rate || '', 
-      finishingTypeId: defaultFinId, hardwareCost: '',
-      fabricMeters: '', fabricRate: '', foamCost: '', packagingCost: '',
-      overheadsPercent: settings?.overheads_percent || ''
+      category: defaultCat,
+      sku: generateSmartSku(defaultCat),
+      name: '',
+      image_base64: '',
+      notes: '',
+      inspiration: '',
+      dimLength: '',
+      dimWidth: '',
+      dimHeight: '',
+      woodTypeId: woodMaster[0]?.id || '',
+      woodCft: '',
+      multiplier: '',
+      rattanSqft: '',
+      cushionQty: '',
+      packagingCost: '',
+      addons: []
     });
   };
 
-  const handleSaveProduct = async (calculatedMfgCost, calculatedSellPrice) => {
-    if (!formData.sku || !formData.name) {
-      alert("Please enter a SKU and Product Name before saving.");
+  const handleSaveProduct = async (calculatedSellPrice) => {
+    const cleanSku = formData.sku.trim().toUpperCase();
+    if (!cleanSku || !formData.name.trim()) {
+      alert('Please enter both a SKU and a Product Name before saving.');
       return;
     }
 
-    const isExisting = productLibrary.find(p => p.sku === formData.sku);
-    if (isExisting) {
-      if (!window.confirm(`SKU ${formData.sku} already exists in the library. Do you want to overwrite it with these new details?`)) return;
+    const skuExists = productLibrary.some(p => p.sku === cleanSku);
+    if (skuExists && editingSku !== cleanSku) {
+      alert(`SKU "${cleanSku}" already exists in the Library. Please use a unique SKU.`);
+      return;
     }
 
     const payload = {
-      sku: formData.sku, category: formData.category, name: formData.name,
-      image_base64: formData.image_base64 || null, 
-      notes: formData.notes || null, 
-      inspiration: formData.inspiration || null,
-      dim_length: parseFloat(formData.dimLength) || null, dim_width: parseFloat(formData.dimWidth) || null, dim_height: parseFloat(formData.dimHeight) || null,
-      wood_type_id: parseInt(formData.woodTypeId) || null, wood_cft: parseFloat(formData.woodCft) || 0,
-      plywood_type_id: parseInt(formData.plywoodTypeId) || null, plywood_qty: parseFloat(formData.plywoodQty) || 0,
-      labour_hours: parseFloat(formData.labourHours) || 0, labour_rate: parseInt(formData.labourRate) || 0,
-      hardware_cost: parseFloat(formData.hardwareCost) || 0, finishing_type_id: parseInt(formData.finishingTypeId) || null,
-      fabric_meters: parseFloat(formData.fabricMeters) || 0, fabric_rate: parseFloat(formData.fabricRate) || 0,
-      foam_cost: parseFloat(formData.foamCost) || 0, packaging_cost: parseFloat(formData.packagingCost) || 0,
-      overheads_percent: parseFloat(formData.overheadsPercent) || 0,
-      total_manufacturing_cost: calculatedMfgCost, 
+      sku: cleanSku,
+      category: formData.category,
+      name: formData.name.trim(),
+      image_base64: formData.image_base64 || null,
+      notes: formData.notes.trim(),
+      inspiration: formData.inspiration.trim(),
+      dim_length: parseFloat(formData.dimLength) || null,
+      dim_width: parseFloat(formData.dimWidth) || null,
+      dim_height: parseFloat(formData.dimHeight) || null,
+      wood_type_id: parseInt(formData.woodTypeId, 10) || null,
+      wood_cft: parseFloat(formData.woodCft) || 0,
+      multiplier: parseFloat(formData.multiplier) || 0,
+      rattan_sqft: parseFloat(formData.rattanSqft) || 0,
+      cushion_qty: parseFloat(formData.cushionQty) || 0,
+      packaging_cost: parseFloat(formData.packagingCost) || 0,
+      addons: Array.isArray(formData.addons) ? formData.addons : [],
       estimated_selling_price: calculatedSellPrice,
       modified_at: new Date().toISOString()
     };
 
-    const { error } = await supabase.from('product_master').upsert(payload);
+    try {
+      if (editingSku && editingSku !== cleanSku) {
+        await supabase.from('product_master').delete().eq('sku', editingSku);
+      }
 
-    if (error) {
-      alert("Error saving to cloud: " + error.message);
-    } else {
-      alert(`Product ${formData.sku} successfully saved!`);
-      fetchAllMasterData(); 
+      const { error } = await supabase.from('product_master').upsert(payload);
+      if (error) throw error;
+
+      alert(`Product ${cleanSku} saved successfully!`);
+      setEditingSku(cleanSku);
+      await fetchAllMasterData();
+    } catch (err) {
+      console.error('Save error:', err);
+      alert('Error saving product: ' + err.message);
     }
   };
 
+  // --- LIBRARY CARD ACTIONS ---
   const handleEditProduct = (product) => {
+    setEditingSku(product.sku);
     setFormData({
-      category: product.category || 'Dining Tables', sku: product.sku || '', name: product.name || '',
-      image_base64: product.image_base64 || '', notes: product.notes || '', inspiration: product.inspiration || '',
-      dimLength: product.dim_length || '', dimWidth: product.dim_width || '', dimHeight: product.dim_height || '',
-      woodTypeId: product.wood_type_id || woodMaster?.[0]?.id || '', woodCft: product.wood_cft || '',
-      plywoodTypeId: product.plywood_type_id || plywoodMaster?.[0]?.id || '', plywoodQty: product.plywood_qty || '',
-      labourHours: product.labour_hours || '', labourRate: product.labour_rate || globalSettings?.labour_rate || '',
-      finishingTypeId: product.finishing_type_id || finishingMaster?.[0]?.id || '', hardwareCost: product.hardware_cost || '',
-      fabricMeters: product.fabric_meters || '', fabricRate: product.fabric_rate || '',
-      foamCost: product.foam_cost || '', packagingCost: product.packaging_cost || '',
-      overheadsPercent: product.overheads_percent || globalSettings?.overheads_percent || ''
+      category: product.category || 'Dining Tables',
+      sku: product.sku,
+      name: product.name || '',
+      image_base64: product.image_base64 || '',
+      notes: product.notes || '',
+      inspiration: product.inspiration || '',
+      dimLength: product.dim_length || '',
+      dimWidth: product.dim_width || '',
+      dimHeight: product.dim_height || '',
+      woodTypeId: product.wood_type_id || woodMaster[0]?.id || '',
+      woodCft: product.wood_cft || '',
+      multiplier: product.multiplier || '',
+      rattanSqft: product.rattan_sqft || '',
+      cushionQty: product.cushion_qty || '',
+      packagingCost: product.packaging_cost || '',
+      addons: Array.isArray(product.addons) ? product.addons : []
     });
     setActiveView('workspace');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDuplicateProduct = (product) => {
-    const newSku = generateNextSKU(product.category || 'Dining Tables');
+    const newSku = generateSmartSku(product.category);
+    setEditingSku(null);
     setFormData({
-      category: product.category || 'Dining Tables', sku: newSku, name: product.name || '',
-      image_base64: product.image_base64 || '', notes: product.notes || '', inspiration: product.inspiration || '',
-      dimLength: product.dim_length || '', dimWidth: product.dim_width || '', dimHeight: product.dim_height || '',
-      woodTypeId: product.wood_type_id || woodMaster?.[0]?.id || '', woodCft: product.wood_cft || '',
-      plywoodTypeId: product.plywood_type_id || plywoodMaster?.[0]?.id || '', plywoodQty: product.plywood_qty || '',
-      labourHours: product.labour_hours || '', labourRate: product.labour_rate || globalSettings?.labour_rate || '',
-      finishingTypeId: product.finishing_type_id || finishingMaster?.[0]?.id || '', hardwareCost: product.hardware_cost || '',
-      fabricMeters: product.fabric_meters || '', fabricRate: product.fabric_rate || '',
-      foamCost: product.foam_cost || '', packagingCost: product.packaging_cost || '',
-      overheadsPercent: product.overheads_percent || globalSettings?.overheads_percent || ''
+      category: product.category || 'Dining Tables',
+      sku: newSku,
+      name: `${product.name} (Copy)`,
+      image_base64: '',
+      notes: product.notes || '',
+      inspiration: product.inspiration || '',
+      dimLength: product.dim_length || '',
+      dimWidth: product.dim_width || '',
+      dimHeight: product.dim_height || '',
+      woodTypeId: product.wood_type_id || woodMaster[0]?.id || '',
+      woodCft: product.wood_cft || '',
+      multiplier: product.multiplier || '',
+      rattanSqft: product.rattan_sqft || '',
+      cushionQty: product.cushion_qty || '',
+      packagingCost: product.packaging_cost || '',
+      addons: Array.isArray(product.addons) ? product.addons : []
     });
     setActiveView('workspace');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDeleteProduct = async (sku, imageUrl) => {
-    if (window.confirm(`Are you absolutely sure you want to permanently delete ${sku}?`)) {
-      if (imageUrl) {
-        const fileName = imageUrl.split('/').pop();
+    if (!confirm(`Are you sure you want to permanently delete ${sku}?`)) return;
+
+    try {
+      if (imageUrl && imageUrl.includes('/product-images/')) {
+        const fileName = imageUrl.split('/product-images/')[1];
         if (fileName) {
           await supabase.storage.from('product-images').remove([fileName]);
         }
       }
+
       const { error } = await supabase.from('product_master').delete().eq('sku', sku);
-      if (error) alert("Error deleting product: " + error.message);
-      else fetchAllMasterData();
+      if (error) throw error;
+
+      if (editingSku === sku) handleResetForm();
+      await fetchAllMasterData();
+    } catch (err) {
+      console.error('Delete error:', err);
+      alert('Failed to delete product: ' + err.message);
     }
   };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    window.location.reload(); 
+    window.location.reload();
   };
 
-  const calculateDynamicPrice = (item) => {
-    const parseNum = (val) => parseFloat(val) || 0;
-    
-    const woodRate = woodMaster?.find(w => w.id === item.wood_type_id)?.rate_per_cft_premium || 0;
-    const plyRate = plywoodMaster?.find(p => p.id === item.plywood_type_id)?.rate_per_sheet || 0;
-    const finCost = finishingMaster?.find(f => f.id === item.finishing_type_id)?.flat_rate || 0;
-
-    const totalWood = parseNum(item.wood_cft) * woodRate;
-    const totalPly = parseNum(item.plywood_qty) * plyRate;
-    const totalLab = parseNum(item.labour_hours) * parseNum(item.labour_rate);
-    const totalUph = (parseNum(item.fabric_meters) * parseNum(item.fabric_rate)) + parseNum(item.foam_cost);
-    const hardCost = parseNum(item.hardware_cost);
-    const packCost = parseNum(item.packaging_cost);
-
-    const baseCost = totalWood + totalPly + totalLab + hardCost + totalUph + finCost + packCost;
-    const overheads = baseCost * (parseNum(item.overheads_percent) / 100);
-    const mfgCost = baseCost + overheads;
-    const marginPct = globalSettings?.margin_percent || 40;
-    
-    const rawSellPrice = mfgCost / (1 - (marginPct / 100));
-    return Math.ceil(rawSellPrice / 1000) * 1000;
+  // Toggle Client View and reset any individual card price reveals
+  const handleToggleClientView = (checked) => {
+    setClientViewMode(checked);
+    setRevealedPrices({});
   };
 
-  const filteredLibrary = productLibrary.filter(p => 
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    p.sku.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Toggle price visibility for a single product card while in Client View
+  const toggleSingleProductPrice = (sku) => {
+    setRevealedPrices(prev => ({
+      ...prev,
+      [sku]: !prev[sku]
+    }));
+  };
 
-  const groupedLibrary = filteredLibrary.reduce((groups, product) => {
-    const category = product.category || 'Uncategorized';
-    if (!groups[category]) groups[category] = [];
-    groups[category].push(product);
-    return groups;
+  // --- LIBRARY FILTERING & GROUPING ---
+  const filteredProducts = productLibrary.filter(p => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    const woodName = woodMaster.find(w => w.id === p.wood_type_id)?.name?.toLowerCase() || '';
+    return (
+      p.sku?.toLowerCase().includes(q) ||
+      p.name?.toLowerCase().includes(q) ||
+      p.category?.toLowerCase().includes(q) ||
+      woodName.includes(q) ||
+      p.notes?.toLowerCase().includes(q)
+    );
+  });
+
+  const groupedByCategory = filteredProducts.reduce((acc, product) => {
+    const cat = product.category || 'Uncategorized';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(product);
+    return acc;
   }, {});
 
-  const isPricingHiddenMode = isShowroomClient || (isAdmin && clientViewActive);
+  const toggleCategoryAccordion = (cat) => {
+    setOpenCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
+  };
 
-  if (authLoading) return <div className="flex items-center justify-center bg-[#f4f1eb] min-h-screen"><p>Loading security profile...</p></div>;
-  if (!session) return <Login />;
-  if (!globalSettings || dataLoading) return <div className="flex flex-col items-center justify-center bg-[#f4f1eb] min-h-screen text-center"><p className="text-sm font-medium text-[#746b61]">Syncing with Cloud Engine tables...</p></div>;
+  // --- RENDER GATES ---
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center bg-[#f4f1eb] min-h-screen">
+        <p className="text-xs font-bold uppercase tracking-widest text-[#746b61]">
+          Verifying Session...
+        </p>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <Login />;
+  }
+
+  if (dataLoading && woodMaster.length === 0) {
+    return (
+      <div className="flex items-center justify-center bg-[#f4f1eb] min-h-screen">
+        <p className="text-xs font-bold uppercase tracking-widest text-[#746b61]">
+          Syncing Arovan Cloud Engine...
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-[#f4f1eb]">
-      <header className="bg-white border-b border-[#e1d8cd] sticky top-0 z-30 shadow-sm">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-8">
-          <div className="flex justify-between items-center h-16 sm:h-20">
-            
-            <div className="flex items-center gap-4 sm:gap-6">
-              <img src="/Logo_1600x900.jpeg" alt="Arovan Logo" className="h-8 sm:h-12 object-contain" />
-              <div className="hidden sm:block h-8 w-px bg-[#e1d8cd]"></div>
-              <p className="hidden sm:block text-[11px] font-bold text-[#746b61] uppercase tracking-[0.2em] mt-1">
-                Product Master Engine
-              </p>
-            </div>
-
-            <div className="hidden md:flex items-center h-full">
-              <nav className="flex h-full mr-8 gap-2">
-                {isAdmin && (
-                  <>
-                    <button onClick={() => setActiveView('workspace')} className={`px-4 text-xs font-bold uppercase tracking-widest h-full border-b-2 transition-colors flex items-center ${activeView === 'workspace' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#8c8378] hover:text-[#171512]'}`}>Workspace</button>
-                    <button onClick={() => setActiveView('library')} className={`px-4 text-xs font-bold uppercase tracking-widest h-full border-b-2 transition-colors flex items-center ${activeView === 'library' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#8c8378] hover:text-[#171512]'}`}>Library ({productLibrary.length})</button>
-                    <button onClick={() => setActiveView('settings')} className={`px-4 text-xs font-bold uppercase tracking-widest h-full border-b-2 transition-colors flex items-center gap-2 ${activeView === 'settings' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#8c8378] hover:text-[#171512]'}`}>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                      Settings
-                    </button>
-                  </>
-                )}
-                {isContractor && (
-                  <button className="px-4 text-xs font-bold uppercase tracking-widest h-full border-b-2 border-[#171512] text-[#171512] flex items-center">
-                    Product Library ({productLibrary.length})
-                  </button>
-                )}
-                {isShowroomClient && (
-                  <button className="px-4 text-xs font-bold uppercase tracking-widest h-full border-b-2 border-[#171512] text-[#171512] flex items-center">
-                    Lookbook ({productLibrary.length})
-                  </button>
-                )}
-              </nav>
-              
-              <div className="flex items-center pl-8 border-l border-[#e1d8cd] h-8">
-                {isAdmin && (
-                  <div className="flex items-center gap-3 mr-6 bg-[#faf9f6] border border-[#e1d8cd] rounded-full py-1 px-3.5 shadow-inner">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#746b61]">Client View</span>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" checked={clientViewActive} onChange={(e) => setClientViewActive(e.target.checked)} className="sr-only peer" />
-                      <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#171512]"></div>
-                    </label>
-                  </div>
-                )}
-                {isContractor && <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-1 rounded-sm mr-4 border border-blue-100">Contractor</span>}
-                {isShowroomClient && <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-sm mr-4 border border-emerald-100">Showroom View</span>}
-                <button onClick={handleSignOut} className="text-[11px] font-bold text-[#8c8378] hover:text-red-600 uppercase tracking-widest transition-colors">Sign Out</button>
+    <div className="min-h-screen bg-[#f4f1eb] text-[#171512]">
+      {/* PREMIUM RESPONSIVE HEADER */}
+      <header className="bg-white border-b border-[#e1d8cd] sticky top-0 z-30 shadow-xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          {/* Brand Logo + Subtitle */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3.5">
+              <img
+                src="/Logo_1600x900.jpeg"
+                alt="Arovan"
+                className="h-9 sm:h-11 w-auto object-contain"
+              />
+              <div className="hidden sm:block h-7 w-px bg-[#e1d8cd]" />
+              <div className="hidden sm:block">
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#171512]">
+                  Product Master
+                </p>
+                <p className="text-[10px] text-[#746b61]">
+                  {isAdmin ? 'Admin Engine' : isFreelancer ? 'Contractor Access' : 'Showroom Lookbook'}
+                </p>
               </div>
             </div>
 
-            <div className="md:hidden flex items-center gap-3">
-               {isAdmin && (
-                 <button onClick={() => setClientViewActive(!clientViewActive)} className={`px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-wider border transition-colors ${clientViewActive ? 'bg-[#171512] border-[#171512] text-white' : 'bg-white border-[#e1d8cd] text-[#746b61]'}`}>
-                   {clientViewActive ? 'Exit Client View' : 'Client View'}
-                 </button>
-               )}
-               {isContractor && <span className="text-[9px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-1 rounded-sm border border-blue-100">Contractor</span>}
-               {isShowroomClient && <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-1 rounded-sm border border-emerald-100">Showroom</span>}
-               <button onClick={handleSignOut} className="text-[10px] font-bold text-[#8c8378] hover:text-red-600 uppercase tracking-widest">Sign Out</button>
-            </div>
+            {/* Mobile Sign Out */}
+            <button
+              onClick={handleSignOut}
+              className="md:hidden px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider border border-[#dcd3c9] rounded-full text-[#5c5349] hover:bg-red-50 hover:text-red-600 transition"
+            >
+              Sign Out
+            </button>
           </div>
 
-          {isAdmin && (
-            <div className="md:hidden flex items-center overflow-x-auto no-scrollbar gap-2 pb-3 pt-1">
-              <button onClick={() => setActiveView('workspace')} className={`whitespace-nowrap px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-full transition-colors ${activeView === 'workspace' ? 'bg-[#171512] text-white' : 'bg-[#f4f1eb] text-[#746b61]'}`}>Workspace</button>
-              <button onClick={() => setActiveView('library')} className={`whitespace-nowrap px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-full transition-colors ${activeView === 'library' ? 'bg-[#171512] text-white' : 'bg-[#f4f1eb] text-[#746b61]'}`}>Library ({productLibrary.length})</button>
-              <button onClick={() => setActiveView('settings')} className={`whitespace-nowrap px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-full transition-colors flex items-center gap-1.5 ${activeView === 'settings' ? 'bg-[#171512] text-white' : 'bg-[#f4f1eb] text-[#746b61]'}`}>Settings</button>
-            </div>
-          )}
+          {/* Navigation Tabs & Admin Controls */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 no-scrollbar">
+            {isAdmin && (
+              <button
+                onClick={() => setActiveView('workspace')}
+                className={`shrink-0 px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-full md:rounded-none md:border-b-2 transition ${
+                  activeView === 'workspace'
+                    ? 'bg-[#171512] text-white md:bg-transparent md:text-[#171512] md:border-[#171512]'
+                    : 'bg-[#f4f1eb] text-[#746b61] md:bg-transparent md:border-transparent hover:text-[#171512]'
+                }`}
+              >
+                Workspace
+              </button>
+            )}
+
+            <button
+              onClick={() => setActiveView('library')}
+              className={`shrink-0 px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-full md:rounded-none md:border-b-2 transition ${
+                activeView === 'library'
+                  ? 'bg-[#171512] text-white md:bg-transparent md:text-[#171512] md:border-[#171512]'
+                  : 'bg-[#f4f1eb] text-[#746b61] md:bg-transparent md:border-transparent hover:text-[#171512]'
+              }`}
+            >
+              Library ({productLibrary.length})
+            </button>
+
+            {isAdmin && (
+              <button
+                onClick={() => setActiveView('settings')}
+                className={`shrink-0 flex items-center gap-1.5 px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-full md:rounded-none md:border-b-2 transition ${
+                  activeView === 'settings'
+                    ? 'bg-[#171512] text-white md:bg-transparent md:text-[#171512] md:border-[#171512]'
+                    : 'bg-[#f4f1eb] text-[#746b61] md:bg-transparent md:border-transparent hover:text-[#171512]'
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+                Settings
+              </button>
+            )}
+
+            {/* Admin "Client View" Toggle Switch */}
+            {isAdmin && (
+              <label className="shrink-0 flex items-center gap-2 ml-2 px-3 py-1.5 bg-[#faf8f5] border border-[#e1d8cd] rounded-full cursor-pointer select-none">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#5c5349]">
+                  Client View
+                </span>
+                <input
+                  type="checkbox"
+                  checked={clientViewMode}
+                  onChange={(e) => handleToggleClientView(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-8 h-4 bg-[#dcd3c9] rounded-full peer peer-checked:bg-[#171512] relative transition after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:w-3 after:h-3 after:rounded-full after:transition-all peer-checked:after:translate-x-4" />
+              </label>
+            )}
+
+            {/* Desktop Sign Out */}
+            <button
+              onClick={handleSignOut}
+              className="hidden md:inline-block ml-2 px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wider border border-[#dcd3c9] rounded-md text-[#5c5349] hover:bg-red-50 hover:text-red-600 transition"
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-[1400px] mx-auto p-4 sm:p-6 lg:p-8">
+      {/* MAIN CONTENT CONTAINER */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-8 py-8">
+        {/* VIEW 1: WORKSPACE (ADMIN ONLY) */}
         {activeView === 'workspace' && isAdmin && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 items-start">
-            <div className="col-span-1 lg:col-span-2">
-              <CostingForm formData={formData} setFormData={setFormData} woodMaster={woodMaster} finishingMaster={finishingMaster} plywoodMaster={plywoodMaster} onCategoryChange={handleCategoryChange} />
-            </div>
-            <div className="col-span-1">
-              <CostingSummary formData={formData} globalSettings={globalSettings} woodMaster={woodMaster} finishingMaster={finishingMaster} plywoodMaster={plywoodMaster} onSave={handleSaveProduct} onReset={() => handleResetForm()} />
+          <div>
+            {editingSku && (
+              <div className="mb-5 px-4 py-3 bg-[#171512] text-white rounded-md flex items-center justify-between text-xs">
+                <span>
+                  Editing existing product: <strong className="font-mono">{editingSku}</strong>
+                </span>
+                <button
+                  onClick={handleResetForm}
+                  className="underline font-semibold hover:text-[#dcd3c9]"
+                >
+                  + Switch to New Product
+                </button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              <div className="lg:col-span-8">
+                <CostingForm
+                  formData={formData}
+                  setFormData={setFormData}
+                  woodMaster={woodMaster}
+                  addonsMaster={addonsMaster}
+                  onCategoryChange={handleCategoryChange}
+                />
+              </div>
+
+              <div className="lg:col-span-4">
+                <CostingSummary
+                  formData={formData}
+                  addonsMaster={addonsMaster}
+                  onSave={handleSaveProduct}
+                  onReset={handleResetForm}
+                  isClientView={clientViewMode}
+                />
+              </div>
             </div>
           </div>
         )}
 
+        {/* VIEW 2: PRODUCT LIBRARY (ALL ROLES) */}
         {activeView === 'library' && (
-          <div className="bg-white p-6 lg:p-8 rounded-xl border border-[#e1d8cd] shadow-sm">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+          <div className="space-y-6">
+            {/* Search & Live Sync Header */}
+            <div className="bg-white p-5 rounded-lg border border-[#e1d8cd] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="text-xl font-medium text-gray-900">
-                    {isPricingHiddenMode ? 'Design Lookbook' : 'Product Library'}
-                  </h2>
-                  {!isPricingHiddenMode && (
-                    <span className="px-2.5 py-1 bg-green-50 text-green-700 border border-green-200 rounded-md text-[9px] font-bold uppercase tracking-widest shadow-sm">
-                      Live Pricing Synced: {lastSyncTime}
-                    </span>
-                  )}
-                  {isPricingHiddenMode && (
-                    <span className="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-md text-[9px] font-bold uppercase tracking-widest shadow-sm">
-                      Client View Active
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-[#746b61] mt-2">Organized by category. Total items: {filteredLibrary.length}</p>
+                <h2 className="font-serif text-xl text-[#171512]">Product Library</h2>
+                {!defaultHidePrices && lastSyncTime && (
+                  <p className="text-[11px] text-[#746b61] mt-0.5">
+                    Live Pricing Synced: <span className="font-semibold">{lastSyncTime}</span>
+                  </p>
+                )}
               </div>
+
               <div className="w-full sm:w-80">
-                <input type="text" placeholder="🔍 Search by SKU or Name..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full p-3 border border-[#dcd3c9] rounded-lg text-sm bg-[#fdfcfb] focus:outline-none focus:border-[#171512] focus:ring-1 focus:ring-[#171512] transition-shadow" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search SKU, product name, wood, category..."
+                  className="w-full px-3.5 py-2 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+                />
               </div>
             </div>
 
-            {Object.keys(groupedLibrary).length === 0 ? (
-              <p className="text-gray-500 text-center py-12 bg-[#faf9f6] rounded-lg border border-dashed border-[#dcd3c9]">No products match your search.</p>
+            {/* Category Accordions */}
+            {Object.keys(groupedByCategory).length === 0 ? (
+              <div className="bg-white p-12 rounded-lg border border-[#e1d8cd] text-center">
+                <p className="text-sm text-[#746b61]">
+                  No products found matching your search.
+                </p>
+              </div>
             ) : (
-              <div className="flex flex-col gap-6">
-                {Object.entries(groupedLibrary).map(([category, items]) => (
-                  <details key={category} open className="group border border-[#e1d8cd] rounded-xl bg-white overflow-hidden shadow-sm">
-                    <summary className="flex justify-between items-center cursor-pointer p-5 bg-[#fdfcfb] hover:bg-[#f4f1eb] transition-colors font-medium text-[#171512] list-none select-none">
-                      <span className="flex items-center gap-3">
-                        <span className="text-[#746b61] group-open:rotate-90 transition-transform duration-200">▶</span>
-                        <span className="text-sm uppercase tracking-widest">{category}</span> 
-                        <span className="text-xs font-semibold text-[#8c8378] ml-2 bg-white px-2 py-0.5 rounded border border-[#e1d8cd]">{items.length}</span>
-                      </span>
-                    </summary>
-                    <div className="p-5 lg:p-6 bg-white border-t border-[#e1d8cd]">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {items.map(item => {
-                          const woodName = woodMaster.find(w => w.id === item.wood_type_id)?.name || 'Custom Wood';
-                          const dateModified = new Date(item.modified_at).toLocaleDateString();
-                          const dynamicPrice = calculateDynamicPrice(item);
-                          
-                          // Dynamically construct dimensions string
-                          const dimParts = [];
-                          if (item.dim_length) dimParts.push(`${item.dim_length}"L`);
-                          if (item.dim_width) dimParts.push(`${item.dim_width}"W`);
-                          if (item.dim_height) dimParts.push(`${item.dim_height}"H`);
-                          const dimString = dimParts.length > 0 ? ` | 📏 ${dimParts.join(' × ')}` : '';
+              <div className="space-y-4">
+                {Object.entries(groupedByCategory).map(([category, items]) => {
+                  const isOpen = searchQuery.trim() !== '' ? true : Boolean(openCategories[category]);
 
-                          return (
-                            <div key={item.sku} className="bg-white border border-[#e1d8cd] rounded-xl overflow-hidden hover:shadow-md hover:border-[#dcd3c9] transition-all duration-200 flex flex-col group/card h-full">
-                              <div className="w-full h-52 bg-[#faf9f6] relative border-b border-[#e1d8cd] shrink-0">
-                                {item.image_base64 ? (
-                                  <img src={item.image_base64} alt={item.name} className="w-full h-full object-cover" />
-                                ) : (
-                                  <div className="w-full h-full flex flex-col items-center justify-center text-[#8c8378]">
-                                    <span className="text-3xl opacity-40 mb-2">🛋️</span>
-                                    <span className="text-[10px] font-bold uppercase tracking-widest opacity-60">No Photo</span>
+                  return (
+                    <div
+                      key={category}
+                      className="bg-white rounded-lg border border-[#e1d8cd] shadow-sm overflow-hidden"
+                    >
+                      {/* Accordion Toggle Header */}
+                      <button
+                        type="button"
+                        onClick={() => toggleCategoryAccordion(category)}
+                        className="w-full px-6 py-4 flex items-center justify-between bg-[#faf8f5] hover:bg-[#f4f1eb] transition text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="font-serif text-base font-medium text-[#171512]">
+                            {category}
+                          </span>
+                          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[#e8e1d7] text-[#5c5349]">
+                            {items.length}
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold text-[#746b61]">
+                          {isOpen ? '▲ Hide' : '▼ View'}
+                        </span>
+                      </button>
+
+                      {/* Accordion Content Grid */}
+                      {isOpen && (
+                        <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 border-t border-[#e1d8cd]">
+                          {items.map((item) => {
+                            const woodName =
+                              woodMaster.find((w) => w.id === item.wood_type_id)?.name || 'Solid Wood';
+                            const livePrice = calculateDynamicPrice(item);
+
+                            // Determine if this specific card's price should be hidden
+                            const isCardPriceHidden = defaultHidePrices && !revealedPrices[item.sku];
+
+                            const hasDims = item.dim_length || item.dim_width || item.dim_height;
+                            const dimText = hasDims
+                              ? `📏 ${item.dim_length || '-'}"L × ${item.dim_width || '-'}"W × ${item.dim_height || '-'}"H`
+                              : '';
+
+                            return (
+                              <div
+                                key={item.sku}
+                                className="border border-[#e1d8cd] rounded-lg overflow-hidden bg-white flex flex-col justify-between hover:shadow-md transition"
+                              >
+                                <div>
+                                  {/* Full-Fit Product Image Box */}
+                                  <div className="h-56 sm:h-60 w-full bg-[#faf8f5] border-b border-[#e1d8cd] p-3 flex items-center justify-center overflow-hidden">
+                                    {item.image_base64 ? (
+                                      <img
+                                        src={item.image_base64}
+                                        alt={item.name}
+                                        className="max-h-full max-w-full w-auto h-auto object-contain"
+                                      />
+                                    ) : (
+                                      <span className="text-xs text-[#a3988c] uppercase tracking-widest">
+                                        No Image
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Card Body */}
+                                  <div className="p-4">
+                                    <div className="flex items-center justify-between gap-2 mb-2.5">
+                                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-[#f4f1eb] text-[#5c5349] rounded">
+                                        {item.sku}
+                                      </span>
+
+                                      <div className="flex items-center gap-1.5">
+                                        {isCardPriceHidden ? (
+                                          <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 bg-[#faf8f5] border border-[#dcd3c9] text-[#5c5349] rounded-full">
+                                            Exquisite Craft
+                                          </span>
+                                        ) : (
+                                          <span className="text-base font-extrabold text-[#171512]">
+                                            ₹{livePrice.toLocaleString()}
+                                          </span>
+                                        )}
+
+                                        {/* Per-product eye toggle when in Client View */}
+                                        {defaultHidePrices && (
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleSingleProductPrice(item.sku)}
+                                            title={isCardPriceHidden ? 'Show price for this item' : 'Hide price for this item'}
+                                            className="p-1 text-[#746b61] hover:text-[#171512] rounded hover:bg-[#f4f1eb] transition"
+                                          >
+                                            {isCardPriceHidden ? (
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                              </svg>
+                                            ) : (
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                              </svg>
+                                            )}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <h3 className="font-semibold text-base text-[#171512] mb-2">
+                                      {item.name}
+                                    </h3>
+
+                                    {/* Highlighted Wood Badge + Dimensions */}
+                                    <div className="flex flex-wrap items-center gap-2 mb-2.5">
+                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#171512] text-white text-[11px] font-bold tracking-wide">
+                                        {woodName}
+                                      </span>
+                                      {dimText && (
+                                        <span className="text-xs font-medium text-[#5c5349]">
+                                          {dimText}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {item.notes && (
+                                      <p className="text-xs text-[#4a433b] italic mb-2">
+                                        &ldquo;{item.notes}&rdquo;
+                                      </p>
+                                    )}
+
+                                    {item.inspiration && (
+                                      <details className="mt-2 text-xs text-[#5c5349] bg-[#faf8f5] p-2.5 rounded border border-[#e8e1d7]">
+                                        <summary className="cursor-pointer font-bold text-[#171512] select-none">
+                                          Read Story
+                                        </summary>
+                                        <p className="mt-1.5 leading-relaxed">{item.inspiration}</p>
+                                      </details>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Admin Action Footer */}
+                                {isAdmin && (
+                                  <div className="px-4 py-3 bg-[#faf8f5] border-t border-[#e1d8cd] flex items-center justify-between gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditProduct(item)}
+                                      className="flex-1 py-1.5 text-xs font-bold uppercase tracking-wider bg-white border border-[#dcd3c9] rounded hover:bg-[#171512] hover:text-white transition"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDuplicateProduct(item)}
+                                      className="flex-1 py-1.5 text-xs font-bold uppercase tracking-wider bg-white border border-[#dcd3c9] rounded hover:bg-[#171512] hover:text-white transition"
+                                    >
+                                      Duplicate
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteProduct(item.sku, item.image_base64)}
+                                      className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-red-600 bg-white border border-[#dcd3c9] rounded hover:bg-red-50 transition"
+                                    >
+                                      Del
+                                    </button>
                                   </div>
                                 )}
                               </div>
-                              <div className="p-5 flex-1 flex flex-col bg-white">
-                                <div className="flex-1">
-                                  <div className="flex justify-between items-start mb-3">
-                                    <span className="text-[10px] font-bold bg-[#171512] px-2.5 py-1 rounded text-white tracking-widest">{item.sku}</span>
-                                    
-                                    {!isPricingHiddenMode ? (
-                                      <span className="text-sm font-bold text-[#171512]">₹{dynamicPrice.toLocaleString()}</span>
-                                    ) : (
-                                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#8c8378] bg-[#f4f1eb] px-2 py-0.5 rounded">Exquisite Craft</span>
-                                    )}
-                                  </div>
-                                  <h3 className="font-semibold text-gray-900 text-sm mb-1.5 leading-tight">{item.name}</h3>
-                                  {item.notes && <p className="text-xs text-[#746b61] italic line-clamp-2 mb-3 leading-relaxed">{item.notes}</p>}
-                                  
-                                  {/* RENDER DYNAMIC DIMENSIONS NEXT TO WOOD TYPE */}
-                                  <p className="text-[11px] font-medium text-[#8c8378]">{woodName}{dimString}</p>
-                                  
-                                  {item.inspiration && (
-                                    <details className="mt-4 text-xs text-[#746b61] group/story">
-                                      <summary className="cursor-pointer font-bold uppercase tracking-wider underline decoration-[#dcd3c9] underline-offset-4 hover:text-[#171512] transition-colors list-none">
-                                        <span className="group-open/story:hidden">Read Story</span>
-                                        <span className="hidden group-open/story:inline">Close Story</span>
-                                      </summary>
-                                      <div className="mt-3 p-3.5 bg-[#faf9f6] rounded-md border border-[#e1d8cd] whitespace-pre-wrap leading-relaxed shadow-inner">
-                                        {item.inspiration}
-                                      </div>
-                                    </details>
-                                  )}
-                                </div>
-                                <div className="mt-5 pt-4 border-t border-[#f0e9df] flex items-center justify-between shrink-0">
-                                  <span className="text-[9px] font-semibold text-[#8c8378] uppercase tracking-widest">Upd: {dateModified}</span>
-                                  {isAdmin && !isPricingHiddenMode && (
-                                    <div className="flex gap-3">
-                                      <button onClick={() => handleEditProduct(item)} className="text-[10px] font-bold text-[#746b61] hover:text-[#171512] transition-colors uppercase tracking-wider">Edit</button>
-                                      <button onClick={() => handleDuplicateProduct(item)} className="text-[10px] font-bold text-blue-500 hover:text-blue-700 transition-colors uppercase tracking-wider">Dup</button>
-                                      <button onClick={() => handleDeleteProduct(item.sku, item.image_base64)} className="text-[10px] font-bold text-red-400 hover:text-red-600 transition-colors uppercase tracking-wider">Del</button>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </details>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
         )}
 
+        {/* VIEW 3: ADMIN SETTINGS (ADMIN ONLY) */}
         {activeView === 'settings' && isAdmin && (
-          <Settings globalSettings={globalSettings} woodMaster={woodMaster} finishingMaster={finishingMaster} plywoodMaster={plywoodMaster} refreshData={fetchAllMasterData} />
+          <Settings
+            woodMaster={woodMaster}
+            addonsMaster={addonsMaster}
+            refreshData={fetchAllMasterData}
+          />
         )}
       </main>
     </div>

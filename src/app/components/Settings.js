@@ -2,199 +2,364 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 
-export default function Settings({ globalSettings, woodMaster, finishingMaster, plywoodMaster, refreshData }) {
-  const [isUnlocked, setIsUnlocked] = useState(false);
-  const [pin, setPin] = useState('');
-  const [activeTab, setActiveTab] = useState('wood');
-  const [isSaving, setIsSaving] = useState(false);
+export default function Settings({ woodMaster, addonsMaster, refreshData }) {
+  const [unlocked, setUnlocked] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [activeTab, setActiveTab] = useState('addons');
+  const [saving, setSaving] = useState(false);
 
-  const [globals, setGlobals] = useState(globalSettings || { labour_rate: 300, overheads_percent: 20, margin_percent: 40 });
-  const [woods, setWoods] = useState(woodMaster || []);
-  const [finishes, setFinishes] = useState(finishingMaster || []);
-  const [plywoods, setPlywoods] = useState(plywoodMaster || []);
+  const [woods, setWoods] = useState([]);
+  const [addons, setAddons] = useState([]);
 
   useEffect(() => {
-    if (globalSettings) setGlobals(globalSettings);
     if (woodMaster) setWoods(woodMaster);
-    if (finishingMaster) setFinishes(finishingMaster);
-    if (plywoodMaster) setPlywoods(plywoodMaster);
-  }, [globalSettings, woodMaster, finishingMaster, plywoodMaster]);
+    if (addonsMaster) setAddons(addonsMaster);
+  }, [woodMaster, addonsMaster]);
 
   const handleUnlock = (e) => {
     e.preventDefault();
-    if (pin === '2026') {
-      setIsUnlocked(true);
+    if (pinInput === '2026') {
+      setUnlocked(true);
     } else {
-      alert('Incorrect PIN. Access Denied.');
-      setPin('');
+      alert('Incorrect Admin PIN. Access Denied.');
+      setPinInput('');
     }
   };
 
-  const handleSaveToCloud = async () => {
-    setIsSaving(true);
+  // --- WOOD MASTER HANDLERS ---
+  const handleWoodChange = (index, field, value) => {
+    const updated = [...woods];
+    updated[index] = {
+      ...updated[index],
+      [field]: field === 'rate_per_cft' ? (parseFloat(value) || 0) : value
+    };
+    setWoods(updated);
+  };
+
+  const addWoodRow = () => {
+    setWoods([...woods, { name: '', rate_per_cft: 0, isNew: true }]);
+  };
+
+  const deleteWoodRow = async (index) => {
+    const item = woods[index];
+    if (item.id) {
+      if (!confirm(`Delete "${item.name}" from Wood Master?`)) return;
+      await supabase.from('wood_master').delete().eq('id', item.id);
+      await refreshData();
+    } else {
+      setWoods(woods.filter((_, i) => i !== index));
+    }
+  };
+
+  // --- ADD-ONS MASTER HANDLERS ---
+  const handleAddonChange = (index, field, value) => {
+    const updated = [...addons];
+    updated[index] = {
+      ...updated[index],
+      [field]: field === 'rate' ? (parseFloat(value) || 0) : value
+    };
+    setAddons(updated);
+  };
+
+  const addAddonRow = () => {
+    setAddons([...addons, { name: '', unit: 'nos', rate: 0, is_fixed_grid: false, isNew: true }]);
+  };
+
+  const deleteAddonRow = async (index) => {
+    const item = addons[index];
+    if (item.is_fixed_grid) {
+      alert('Core form items (Rattan and Fabric + Cushion) cannot be deleted, only their unit or rate can be edited.');
+      return;
+    }
+    if (item.id) {
+      if (!confirm(`Delete "${item.name}" from Add-ons Master?`)) return;
+      await supabase.from('addons_master').delete().eq('id', item.id);
+      await refreshData();
+    } else {
+      setAddons(addons.filter((_, i) => i !== index));
+    }
+  };
+
+  // --- SAVE ALL TO CLOUD ---
+  const handleSaveAll = async () => {
+    setSaving(true);
     try {
-      if (globalSettings?.id) {
-        await supabase.from('global_settings').update({
-          labour_rate: parseFloat(globals.labour_rate),
-          overheads_percent: parseFloat(globals.overheads_percent),
-          margin_percent: parseFloat(globals.margin_percent)
-        }).eq('id', globalSettings.id);
+      // 1. Save Woods
+      const existingWoods = woods.filter(w => w.id && w.name.trim() !== '');
+      const newWoods = woods
+        .filter(w => !w.id && w.name.trim() !== '')
+        .map(({ name, rate_per_cft }) => ({
+          name: name.trim(),
+          rate_per_cft: rate_per_cft || 0
+        }));
+
+      if (existingWoods.length > 0) {
+        const cleanExistingWoods = existingWoods.map(({ id, name, rate_per_cft }) => ({
+          id,
+          name: name.trim(),
+          rate_per_cft: rate_per_cft || 0
+        }));
+        const { error } = await supabase.from('wood_master').upsert(cleanExistingWoods);
+        if (error) throw error;
+      }
+      if (newWoods.length > 0) {
+        const { error } = await supabase.from('wood_master').insert(newWoods);
+        if (error) throw error;
       }
 
-      const existingWoods = woods.filter(w => !w.isNew).map(w => ({ id: w.id, name: w.name, rate_per_cft_premium: parseFloat(w.rate_per_cft_premium) }));
-      const newWoods = woods.filter(w => w.isNew).map(w => ({ name: w.name, rate_per_cft_premium: parseFloat(w.rate_per_cft_premium) }));
-      if (existingWoods.length > 0) await supabase.from('wood_master').upsert(existingWoods);
-      if (newWoods.length > 0) await supabase.from('wood_master').insert(newWoods);
+      // 2. Save Add-ons
+      const existingAddons = addons.filter(a => a.id && a.name.trim() !== '');
+      const newAddons = addons
+        .filter(a => !a.id && a.name.trim() !== '')
+        .map(({ name, unit, rate, is_fixed_grid }) => ({
+          name: name.trim(),
+          unit: unit.trim() || 'nos',
+          rate: rate || 0,
+          is_fixed_grid: Boolean(is_fixed_grid)
+        }));
 
-      const existingFinishes = finishes.filter(f => !f.isNew).map(f => ({ id: f.id, name: f.name, flat_rate: parseFloat(f.flat_rate) }));
-      const newFinishes = finishes.filter(f => f.isNew).map(f => ({ name: f.name, flat_rate: parseFloat(f.flat_rate) }));
-      if (existingFinishes.length > 0) await supabase.from('finishing_master').upsert(existingFinishes);
-      if (newFinishes.length > 0) await supabase.from('finishing_master').insert(newFinishes);
+      if (existingAddons.length > 0) {
+        const cleanExistingAddons = existingAddons.map(({ id, name, unit, rate, is_fixed_grid }) => ({
+          id,
+          name: name.trim(),
+          unit: unit.trim() || 'nos',
+          rate: rate || 0,
+          is_fixed_grid: Boolean(is_fixed_grid)
+        }));
+        const { error } = await supabase.from('addons_master').upsert(cleanExistingAddons);
+        if (error) throw error;
+      }
+      if (newAddons.length > 0) {
+        const { error } = await supabase.from('addons_master').insert(newAddons);
+        if (error) throw error;
+      }
 
-      const existingPlywoods = plywoods.filter(p => !p.isNew).map(p => ({ id: p.id, name: p.name, rate_per_sheet: parseFloat(p.rate_per_sheet) }));
-      const newPlywoods = plywoods.filter(p => p.isNew).map(p => ({ name: p.name, rate_per_sheet: parseFloat(p.rate_per_sheet) }));
-      if (existingPlywoods.length > 0) await supabase.from('plywood_master').upsert(existingPlywoods);
-      if (newPlywoods.length > 0) await supabase.from('plywood_master').insert(newPlywoods);
-
-      alert("Settings successfully saved to the cloud!");
-      refreshData(); 
-    } catch (error) {
-      alert("Error saving settings: " + error.message);
-    }
-    setIsSaving(false);
-  };
-
-  const addWood = () => setWoods([...woods, { isNew: true, name: 'New Wood', rate_per_cft_premium: 0 }]);
-  const deleteWood = async (index, id) => {
-    if (confirm("Delete this wood type?")) {
-      if (id) await supabase.from('wood_master').delete().eq('id', id);
-      setWoods(woods.filter((_, i) => i !== index));
-      refreshData();
-    }
-  };
-
-  const addFinish = () => setFinishes([...finishes, { isNew: true, name: 'New Finish', flat_rate: 0 }]);
-  const deleteFinish = async (index, id) => {
-    if (confirm("Delete this finish type?")) {
-      if (id) await supabase.from('finishing_master').delete().eq('id', id);
-      setFinishes(finishes.filter((_, i) => i !== index));
-      refreshData();
+      await refreshData();
+      alert('Configuration saved! All product prices have been synced with the new rates.');
+    } catch (err) {
+      console.error('Error saving settings:', err);
+      alert('Failed to save settings: ' + err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const addPlywood = () => setPlywoods([...plywoods, { isNew: true, name: 'New Plywood', rate_per_sheet: 0 }]);
-  const deletePlywood = async (index, id) => {
-    if (confirm("Delete this plywood type?")) {
-      if (id) await supabase.from('plywood_master').delete().eq('id', id);
-      setPlywoods(plywoods.filter((_, i) => i !== index));
-      refreshData();
-    }
-  };
-
-  if (!isUnlocked) {
+  // --- PIN LOCK SCREEN ---
+  if (!unlocked) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 bg-white rounded-lg border border-[#e1d8cd] shadow-sm max-w-sm mx-auto mt-10">
-        <h2 className="font-serif text-xl mb-2 brand-serif text-[#171512]">Admin Configuration</h2>
-        <p className="text-xs text-[#746b61] mb-6 text-center">Enter PIN to manage master rates and margins.</p>
-        <form onSubmit={handleUnlock} className="w-full flex flex-col gap-3">
-          <input type="password" placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value)} className="w-full p-3 border border-[#dcd3c9] rounded-md text-center tracking-[0.5em] focus:outline-none focus:border-[#171512]" autoFocus />
-          <button type="submit" className="w-full py-3 bg-[#171512] text-white text-sm font-bold uppercase tracking-wider rounded-md">Unlock</button>
+      <div className="max-w-md mx-auto mt-16 bg-white p-8 rounded-lg border border-[#e1d8cd] shadow-sm text-center">
+        <div className="w-12 h-12 bg-[#f4f1eb] rounded-full flex items-center justify-center mx-auto mb-4 text-xl">
+          🔒
+        </div>
+        <h2 className="font-serif text-xl text-[#171512] mb-1">Admin Configuration</h2>
+        <p className="text-xs text-[#746b61] mb-6">Enter security PIN to modify master rates</p>
+        <form onSubmit={handleUnlock} className="space-y-4">
+          <input
+            type="password"
+            value={pinInput}
+            onChange={(e) => setPinInput(e.target.value)}
+            placeholder="••••"
+            maxLength={6}
+            className="w-full text-center tracking-[0.5em] text-lg font-bold p-3 border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+            autoFocus
+          />
+          <button
+            type="submit"
+            className="w-full py-2.5 bg-[#171512] text-white text-xs font-bold uppercase tracking-wider rounded-md hover:bg-black transition"
+          >
+            Unlock Settings
+          </button>
         </form>
       </div>
     );
   }
 
+  // --- MAIN SETTINGS DASHBOARD ---
   return (
-    <div className="bg-white rounded-lg border border-[#e1d8cd] shadow-sm overflow-hidden">
-      <div className="p-6 border-b border-[#e1d8cd] flex justify-between items-center bg-[#fdfcfb]">
+    <div className="max-w-4xl mx-auto bg-white rounded-lg border border-[#e1d8cd] shadow-sm overflow-hidden">
+      {/* Top Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-5 border-b border-[#e1d8cd] bg-[#faf8f5]">
         <div>
-          <h2 className="text-lg font-medium text-gray-800">Master Configuration</h2>
-          <p className="text-xs text-[#746b61] mt-1">Changes made here affect all future product calculations.</p>
+          <h2 className="font-serif text-xl text-[#171512]">Master Rate Configuration</h2>
+          <p className="text-xs text-[#746b61] mt-0.5">
+            Changes here automatically recalculate live prices across your Product Library.
+          </p>
         </div>
-        <button onClick={handleSaveToCloud} disabled={isSaving} className="px-6 py-2.5 bg-[#171512] text-white text-xs font-bold uppercase tracking-wider rounded-md hover:opacity-90 disabled:opacity-50 transition">
-          {isSaving ? 'Saving to Cloud...' : 'Save Settings'}
+        <button
+          onClick={handleSaveAll}
+          disabled={saving}
+          className="px-5 py-2.5 bg-[#171512] text-white text-xs font-bold uppercase tracking-wider rounded-md hover:bg-black transition disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Save All Changes'}
         </button>
       </div>
 
-      <div className="flex border-b border-[#e1d8cd] bg-[#fdfcfb]">
-        <button onClick={() => setActiveTab('wood')} className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition ${activeTab === 'wood' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61] hover:text-[#171512]'}`}>Wood Master</button>
-        <button onClick={() => setActiveTab('finishing')} className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition ${activeTab === 'finishing' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61] hover:text-[#171512]'}`}>Finishing Master</button>
-        <button onClick={() => setActiveTab('plywood')} className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition ${activeTab === 'plywood' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61] hover:text-[#171512]'}`}>Plywood Master</button>
-        <button onClick={() => setActiveTab('globals')} className={`px-6 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition ${activeTab === 'globals' ? 'border-[#171512] text-[#171512]' : 'border-transparent text-[#746b61] hover:text-[#171512]'}`}>Global Margins</button>
+      {/* Sub-navigation Tabs */}
+      <div className="flex border-b border-[#e1d8cd] px-6 bg-white">
+        <button
+          onClick={() => setActiveTab('addons')}
+          className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition ${
+            activeTab === 'addons'
+              ? 'border-[#171512] text-[#171512]'
+              : 'border-transparent text-[#746b61] hover:text-[#171512]'
+          }`}
+        >
+          Add-ons & Components ({addons.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('woods')}
+          className={`py-3.5 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition ${
+            activeTab === 'woods'
+              ? 'border-[#171512] text-[#171512]'
+              : 'border-transparent text-[#746b61] hover:text-[#171512]'
+          }`}
+        >
+          Wood Reference Rates ({woods.length})
+        </button>
       </div>
 
-      <div className="p-6">
-        {activeTab === 'wood' && (
-          <div className="max-w-2xl">
-            <div className="grid grid-cols-12 gap-4 mb-3 text-xs font-bold text-[#746b61] uppercase tracking-wider px-2">
-              <div className="col-span-6">Wood Type</div>
-              <div className="col-span-4">Rate (₹ / CFT)</div>
-              <div className="col-span-2 text-right">Action</div>
+      {/* TAB 1: ADD-ONS & COMPONENTS MASTER */}
+      {activeTab === 'addons' && (
+        <div className="p-6">
+          <div className="mb-4 p-3 bg-[#f4f1eb] rounded-md text-xs text-[#5c5349]">
+            Set the <strong>selling rate (₹)</strong> per unit for Rattan, Fabric + Cushion, and any additional components (Plywood, Brass, Metal, Hinges, Door Handles, etc.).
+          </div>
+
+          <div className="space-y-3">
+            <div className="hidden sm:grid sm:grid-cols-12 gap-3 text-[10px] font-bold uppercase tracking-wider text-[#746b61] px-2">
+              <div className="col-span-5">Component / Material Name</div>
+              <div className="col-span-3">Unit (e.g. mtr, sqft, nos)</div>
+              <div className="col-span-3">Selling Rate (₹)</div>
+              <div className="col-span-1 text-right">Action</div>
             </div>
-            {woods.map((w, index) => (
-              <div key={index} className="grid grid-cols-12 gap-4 items-center mb-3">
-                <input type="text" value={w.name} onChange={(e) => { const nw = [...woods]; nw[index].name = e.target.value; setWoods(nw); }} className="col-span-6 p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-                <input type="number" value={w.rate_per_cft_premium} onChange={(e) => { const nw = [...woods]; nw[index].rate_per_cft_premium = e.target.value; setWoods(nw); }} className="col-span-4 p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-                <button onClick={() => deleteWood(index, w.id)} className="col-span-2 text-red-400 hover:text-red-600 text-xs font-bold uppercase tracking-wider text-right px-2 transition">Delete</button>
+
+            {addons.map((item, idx) => (
+              <div
+                key={item.id || `new-addon-${idx}`}
+                className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center p-3 sm:p-2 border sm:border-0 border-[#e1d8cd] rounded-md bg-[#faf8f5] sm:bg-transparent"
+              >
+                <div className="sm:col-span-5 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={item.name}
+                    disabled={item.is_fixed_grid}
+                    onChange={(e) => handleAddonChange(idx, 'name', e.target.value)}
+                    placeholder="e.g. Brass Inlay"
+                    className="w-full p-2 text-sm border border-[#dcd3c9] rounded-md disabled:bg-[#f4f1eb] disabled:text-[#746b61] focus:outline-none focus:border-[#171512]"
+                  />
+                  {item.is_fixed_grid && (
+                    <span className="shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 bg-[#e8e1d7] text-[#5c5349] rounded">
+                      Core
+                    </span>
+                  )}
+                </div>
+
+                <div className="sm:col-span-3">
+                  <input
+                    type="text"
+                    value={item.unit}
+                    onChange={(e) => handleAddonChange(idx, 'unit', e.target.value)}
+                    placeholder="mtr / sqft / nos"
+                    className="w-full p-2 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+                  />
+                </div>
+
+                <div className="sm:col-span-3">
+                  <input
+                    type="number"
+                    value={item.rate}
+                    onChange={(e) => handleAddonChange(idx, 'rate', e.target.value)}
+                    placeholder="0"
+                    className="w-full p-2 text-sm font-medium border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+                  />
+                </div>
+
+                <div className="sm:col-span-1 text-right">
+                  {!item.is_fixed_grid && (
+                    <button
+                      type="button"
+                      onClick={() => deleteAddonRow(idx)}
+                      className="text-xs text-red-600 hover:text-red-800 font-semibold px-2 py-1"
+                    >
+                      Del
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
-            <button onClick={addWood} className="mt-4 text-xs font-bold uppercase tracking-wider text-[#171512] border border-[#dcd3c9] px-4 py-2.5 rounded-md hover:bg-[#f4f1eb] transition">+ Add Wood Type</button>
           </div>
-        )}
 
-        {activeTab === 'finishing' && (
-          <div className="max-w-2xl">
-            <div className="grid grid-cols-12 gap-4 mb-3 text-xs font-bold text-[#746b61] uppercase tracking-wider px-2">
-              <div className="col-span-6">Finishing Type</div>
-              <div className="col-span-4">Flat Cost (₹)</div>
-              <div className="col-span-2 text-right">Action</div>
+          <button
+            type="button"
+            onClick={addAddonRow}
+            className="mt-5 px-4 py-2 border border-dashed border-[#746b61] text-xs font-bold uppercase tracking-wider text-[#171512] rounded-md hover:bg-[#f4f1eb] transition"
+          >
+            + Add New Component
+          </button>
+        </div>
+      )}
+
+      {/* TAB 2: WOOD REFERENCE RATES */}
+      {activeTab === 'woods' && (
+        <div className="p-6">
+          <div className="mb-4 p-3 bg-[#f4f1eb] rounded-md text-xs text-[#5c5349]">
+            Wood rates act as a <strong>visual reference guide</strong> in the Costing Form while you enter the product&apos;s Multiplier (₹/CFT).
+          </div>
+
+          <div className="space-y-3">
+            <div className="hidden sm:grid sm:grid-cols-12 gap-3 text-[10px] font-bold uppercase tracking-wider text-[#746b61] px-2">
+              <div className="col-span-7">Wood Species</div>
+              <div className="col-span-4">Reference Rate (₹ / CFT)</div>
+              <div className="col-span-1 text-right">Action</div>
             </div>
-            {finishes.map((f, index) => (
-              <div key={index} className="grid grid-cols-12 gap-4 items-center mb-3">
-                <input type="text" value={f.name} onChange={(e) => { const nf = [...finishes]; nf[index].name = e.target.value; setFinishes(nf); }} className="col-span-6 p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-                <input type="number" value={f.flat_rate} onChange={(e) => { const nf = [...finishes]; nf[index].flat_rate = e.target.value; setFinishes(nf); }} className="col-span-4 p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-                <button onClick={() => deleteFinish(index, f.id)} className="col-span-2 text-red-400 hover:text-red-600 text-xs font-bold uppercase tracking-wider text-right px-2 transition">Delete</button>
+
+            {woods.map((wood, idx) => (
+              <div
+                key={wood.id || `new-wood-${idx}`}
+                className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center p-3 sm:p-2 border sm:border-0 border-[#e1d8cd] rounded-md bg-[#faf8f5] sm:bg-transparent"
+              >
+                <div className="sm:col-span-7">
+                  <input
+                    type="text"
+                    value={wood.name}
+                    onChange={(e) => handleWoodChange(idx, 'name', e.target.value)}
+                    placeholder="e.g. Dandeli Teak"
+                    className="w-full p-2 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+                  />
+                </div>
+
+                <div className="sm:col-span-4">
+                  <input
+                    type="number"
+                    value={wood.rate_per_cft || ''}
+                    onChange={(e) => handleWoodChange(idx, 'rate_per_cft', e.target.value)}
+                    placeholder="0"
+                    className="w-full p-2 text-sm font-medium border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+                  />
+                </div>
+
+                <div className="sm:col-span-1 text-right">
+                  <button
+                    type="button"
+                    onClick={() => deleteWoodRow(idx)}
+                    className="text-xs text-red-600 hover:text-red-800 font-semibold px-2 py-1"
+                  >
+                    Del
+                  </button>
+                </div>
               </div>
             ))}
-            <button onClick={addFinish} className="mt-4 text-xs font-bold uppercase tracking-wider text-[#171512] border border-[#dcd3c9] px-4 py-2.5 rounded-md hover:bg-[#f4f1eb] transition">+ Add Finish Type</button>
           </div>
-        )}
 
-        {activeTab === 'plywood' && (
-          <div className="max-w-2xl">
-            <div className="grid grid-cols-12 gap-4 mb-3 text-xs font-bold text-[#746b61] uppercase tracking-wider px-2">
-              <div className="col-span-6">Plywood Type</div>
-              <div className="col-span-4">Rate (₹ / Sheet)</div>
-              <div className="col-span-2 text-right">Action</div>
-            </div>
-            {plywoods.map((p, index) => (
-              <div key={index} className="grid grid-cols-12 gap-4 items-center mb-3">
-                <input type="text" value={p.name} onChange={(e) => { const np = [...plywoods]; np[index].name = e.target.value; setPlywoods(np); }} className="col-span-6 p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-                <input type="number" value={p.rate_per_sheet} onChange={(e) => { const np = [...plywoods]; np[index].rate_per_sheet = e.target.value; setPlywoods(np); }} className="col-span-4 p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-                <button onClick={() => deletePlywood(index, p.id)} className="col-span-2 text-red-400 hover:text-red-600 text-xs font-bold uppercase tracking-wider text-right px-2 transition">Delete</button>
-              </div>
-            ))}
-            <button onClick={addPlywood} className="mt-4 text-xs font-bold uppercase tracking-wider text-[#171512] border border-[#dcd3c9] px-4 py-2.5 rounded-md hover:bg-[#f4f1eb] transition">+ Add Plywood Type</button>
-          </div>
-        )}
-
-        {activeTab === 'globals' && (
-          <div className="max-w-md flex flex-col gap-5">
-            <div>
-              <label className="block text-xs font-semibold text-[#4a443e] mb-1.5">Default Labour Rate (₹/Hr)</label>
-              <input type="number" value={globals.labour_rate} onChange={(e) => setGlobals({...globals, labour_rate: e.target.value})} className="w-full p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-[#4a443e] mb-1.5">Standard Overheads (%)</label>
-              <input type="number" value={globals.overheads_percent} onChange={(e) => setGlobals({...globals, overheads_percent: e.target.value})} className="w-full p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-[#4a443e] mb-1.5">Target Profit Margin (%)</label>
-              <input type="number" value={globals.margin_percent} onChange={(e) => setGlobals({...globals, margin_percent: e.target.value})} className="w-full p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-            </div>
-          </div>
-        )}
-      </div>
+          <button
+            type="button"
+            onClick={addWoodRow}
+            className="mt-5 px-4 py-2 border border-dashed border-[#746b61] text-xs font-bold uppercase tracking-wider text-[#171512] rounded-md hover:bg-[#f4f1eb] transition"
+          >
+            + Add Wood Type
+          </button>
+        </div>
+      )}
     </div>
   );
 }

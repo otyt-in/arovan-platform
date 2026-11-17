@@ -2,239 +2,497 @@
 import { useState } from 'react';
 import { supabase } from '../utils/supabaseClient';
 
-export default function CostingForm({ formData, setFormData, woodMaster, finishingMaster, plywoodMaster, onCategoryChange }) {
+const CATEGORIES = [
+  'Dining Tables',
+  'Center Tables',
+  'Console Tables',
+  'Nesting Table',
+  'End Tables',
+  'Benches',
+  'Sofas',
+  'Chairs',
+  'High Stools',
+  'Beds',
+  'Custom'
+];
+
+export default function CostingForm({
+  formData,
+  setFormData,
+  woodMaster,
+  addonsMaster,
+  onCategoryChange
+}) {
   const [uploading, setUploading] = useState(false);
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const selectedWood = woodMaster.find(w => String(w.id) === String(formData.woodTypeId));
+  const rattanMaster = addonsMaster.find(a => a.name.toLowerCase() === 'rattan');
+  const cushionMaster = addonsMaster.find(a => a.name.toLowerCase().includes('cushion'));
+  const miscAddonsList = addonsMaster.filter(a => !a.is_fixed_grid);
+
+  // --- DYNAMIC MISC ADD-ONS HANDLERS ---
+  const currentAddons = Array.isArray(formData.addons) ? formData.addons : [];
+
+  const handleAddMiscRow = () => {
+    if (miscAddonsList.length === 0) {
+      alert('No extra components configured in Settings yet.');
+      return;
+    }
+    const defaultItem = miscAddonsList[0];
+    const updated = [...currentAddons, { addon_id: defaultItem.id, qty: 1 }];
+    handleChange('addons', updated);
+  };
+
+  const handleMiscRowChange = (index, field, value) => {
+    const updated = [...currentAddons];
+    updated[index] = {
+      ...updated[index],
+      [field]: field === 'addon_id' ? parseInt(value, 10) : (parseFloat(value) || 0)
+    };
+    handleChange('addons', updated);
+  };
+
+  const handleRemoveMiscRow = (index) => {
+    const updated = currentAddons.filter((_, i) => i !== index);
+    handleChange('addons', updated);
+  };
+
+  // --- IMAGE COMPRESSOR & CLOUD UPLOAD ---
   const handleImageUpload = async (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
+
     setUploading(true);
-
     try {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target.result;
-        img.onload = async () => {
-          const MAX_WIDTH = 800;
-          let width = img.width;
-          let height = img.height;
-          if (width > MAX_WIDTH) {
-            height = Math.round((height * MAX_WIDTH) / width);
-            width = MAX_WIDTH;
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
+      const compressedBlob = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_DIM = 900;
+            let width = img.width;
+            let height = img.height;
 
-          canvas.toBlob(async (blob) => {
-            if (!blob) return;
-            const fileExt = 'jpg';
-            const fileName = `${formData.sku || 'prod'}-${Date.now()}.${fileExt}`;
-            const { error: uploadError } = await supabase.storage
-              .from('product-images')
-              .upload(fileName, blob, { contentType: 'image/jpeg' });
+            if (width > height) {
+              if (width > MAX_DIM) {
+                height = Math.round((height * MAX_DIM) / width);
+                width = MAX_DIM;
+              }
+            } else {
+              if (height > MAX_DIM) {
+                width = Math.round((width * MAX_DIM) / height);
+                height = MAX_DIM;
+              }
+            }
 
-            if (uploadError) throw uploadError;
-            const { data: { publicUrl } } = supabase.storage
-              .from('product-images')
-              .getPublicUrl(fileName);
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
 
-            handleChange('image_base64', publicUrl);
-            setUploading(false);
-          }, 'image/jpeg', 0.75);
+            canvas.toBlob(
+              (blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error('Image compression failed'));
+              },
+              'image/jpeg',
+              0.75
+            );
+          };
+          img.onerror = reject;
+          img.src = event.target.result;
         };
-      };
-    } catch (error) {
-      console.error("Storage error:", error);
-      alert("Upload failed: " + error.message);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('product-images')
+        .upload(fileName, compressedBlob, { contentType: 'image/jpeg' });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('product-images')
+        .getPublicUrl(fileName);
+
+      if (formData.image_base64 && formData.image_base64.includes('/product-images/')) {
+        const oldFileName = formData.image_base64.split('/product-images/')[1];
+        if (oldFileName) {
+          await supabase.storage.from('product-images').remove([oldFileName]);
+        }
+      }
+
+      handleChange('image_base64', publicUrlData.publicUrl);
+    } catch (err) {
+      console.error('Upload error:', err);
+      alert('Failed to upload image: ' + err.message);
+    } finally {
       setUploading(false);
     }
   };
 
-  const selectedPly = plywoodMaster?.find(p => p.id.toString() === formData.plywoodTypeId?.toString());
-  const isPlywoodNone = selectedPly?.name?.toLowerCase() === 'none';
-
   return (
-    <div className="flex flex-col gap-5">
+    <div className="space-y-6">
+      {/* SECTION 1: PRODUCT IDENTITY */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
-        <h3 className="text-xs uppercase font-bold tracking-wider text-[#171512] mb-4 flex items-center gap-2">
-          <span className="w-5 h-5 rounded-full bg-[#171512] text-white flex items-center justify-center text-[10px]">1</span>
-          Product Identity
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Category</label>
-            <select value={formData.category} onChange={(e) => { handleChange('category', e.target.value); if (onCategoryChange) onCategoryChange(e.target.value); }} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]">
-              <option value="Dining Tables">Dining Tables</option>
-              <option value="Center Tables">Center Tables</option>
-              <option value="Console Tables">Console Tables</option>
-              <option value="Nesting Table">Nesting Table</option>
-              <option value="End Tables">End Tables</option>
-              <option value="Benches">Benches</option>
-              <option value="Sofas">Sofas</option>
-              <option value="Chairs">Chairs</option>
-              <option value="High Stools">High Stools</option>
-              <option value="Beds">Beds</option>
-              <option value="Custom">Custom</option>
+        <div className="flex items-center gap-2.5 mb-5">
+          <span className="w-5 h-5 rounded-full bg-[#171512] text-white text-[11px] font-bold flex items-center justify-center">
+            1
+          </span>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-[#171512]">
+            Product Identity
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
+              Category
+            </label>
+            <select
+              value={formData.category}
+              onChange={(e) => {
+                const newCat = e.target.value;
+                handleChange('category', newCat);
+                if (onCategoryChange) onCategoryChange(newCat);
+              }}
+              className="w-full p-2.5 text-sm bg-white border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+            >
+              {CATEGORIES.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
             </select>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">SKU (Editable)</label>
-            <input type="text" value={formData.sku} onChange={(e) => handleChange('sku', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" placeholder="e.g. CHR-001" />
+
+          <div>
+            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
+              SKU (Editable)
+            </label>
+            <input
+              type="text"
+              value={formData.sku}
+              onChange={(e) => handleChange('sku', e.target.value.toUpperCase())}
+              placeholder="e.g. DT-001"
+              className="w-full p-2.5 text-sm font-mono font-semibold border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+            />
           </div>
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <label className="text-xs font-semibold text-[#4a443e]">Product Name</label>
-            <input type="text" value={formData.name} onChange={(e) => handleChange('name', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" placeholder="e.g. Vera Tufted Dining Chair" />
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
+            Product Name
+          </label>
+          <input
+            type="text"
+            value={formData.name}
+            onChange={(e) => handleChange('name', e.target.value)}
+            placeholder="e.g. Vera Tufted Dining Chair"
+            className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+          />
+        </div>
+
+        {/* IMAGE UPLOAD DROPZONE */}
+        <div className="mb-4">
+          <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
+            Product Visual Reference
+          </label>
+          <label className="flex flex-col items-center justify-center border-2 border-dashed border-[#dcd3c9] rounded-lg p-5 cursor-pointer hover:bg-[#faf8f5] transition text-center">
+            {uploading ? (
+              <p className="text-xs font-semibold text-[#746b61]">Compressing & uploading photo...</p>
+            ) : formData.image_base64 ? (
+              <div className="space-y-2">
+                <img
+                  src={formData.image_base64}
+                  alt="Product preview"
+                  className="h-32 w-auto mx-auto rounded object-cover border border-[#e1d8cd]"
+                />
+                <p className="text-[11px] text-[#746b61] font-medium">Click to replace photo</p>
+              </div>
+            ) : (
+              <>
+                <span className="text-2xl mb-1">📷</span>
+                <span className="text-xs font-bold text-[#171512]">Click to upload product photo</span>
+                <span className="text-[10px] text-[#746b61] mt-0.5">
+                  Auto-compresses to save cloud storage
+                </span>
+              </>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+              disabled={uploading}
+            />
+          </label>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
+            Short Description / Tagline (1–2 lines)
+          </label>
+          <textarea
+            rows={2}
+            value={formData.notes}
+            onChange={(e) => handleChange('notes', e.target.value)}
+            placeholder="e.g. Monolithic slab shaped by nature..."
+            className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+          />
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
+            Inspiration & Backstory (Optional)
+          </label>
+          <textarea
+            rows={2}
+            value={formData.inspiration}
+            onChange={(e) => handleChange('inspiration', e.target.value)}
+            placeholder="e.g. Crafted from a single Monkey Pod slab..."
+            className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+          />
+        </div>
+      </div>
+
+      {/* SECTION 2: REFERENCE DIMENSIONS */}
+      <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
+        <div className="flex items-center gap-2.5 mb-5">
+          <span className="w-5 h-5 rounded-full bg-[#171512] text-white text-[11px] font-bold flex items-center justify-center">
+            2
+          </span>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-[#171512]">
+            Reference Dimensions
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">Length (In)</label>
+            <input
+              type="number"
+              value={formData.dimLength}
+              onChange={(e) => handleChange('dimLength', e.target.value)}
+              placeholder="L"
+              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+            />
           </div>
-          <div className="flex flex-col gap-1.5 sm:col-span-2 border-t border-[#f0e9df] pt-4 mt-1">
-            <label className="text-xs font-semibold text-[#4a443e]">Product Visual Reference</label>
-            <div className="relative w-full border-2 border-dashed border-[#dcd3c9] rounded-lg bg-[#fdfcfb] hover:bg-[#f4f1eb] transition group overflow-hidden flex items-center justify-center min-h-[120px]">
-              <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-              {uploading ? (
-                <div className="text-sm font-medium text-[#746b61]">Optimizing & Uploading...</div>
-              ) : formData.image_base64 ? (
-                <div className="flex items-center gap-4 p-4 w-full">
-                  <img src={formData.image_base64} alt="Uploaded preview" className="w-20 h-20 object-cover rounded shadow-sm border border-[#e1d8cd]" />
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-green-600 mb-1">✓ Cloud Upload Successful</span>
-                    <span className="text-[11px] text-[#746b61]">Click anywhere in this box to replace the image.</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center p-6 pointer-events-none">
-                  <span className="text-2xl mb-2">📸</span>
-                  <span className="text-sm font-medium text-[#171512]">Click to upload product photo</span>
-                  <span className="text-[11px] text-[#746b61] mt-1">Auto-compresses to save cloud storage</span>
-                </div>
+          <div>
+            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">Width (In)</label>
+            <input
+              type="number"
+              value={formData.dimWidth}
+              onChange={(e) => handleChange('dimWidth', e.target.value)}
+              placeholder="W"
+              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">Height (In)</label>
+            <input
+              type="number"
+              value={formData.dimHeight}
+              onChange={(e) => handleChange('dimHeight', e.target.value)}
+              placeholder="H"
+              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 3: SIMPLIFIED WOOD MULTIPLIER & ADD-ONS */}
+      <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
+        <div className="flex items-center gap-2.5 mb-5">
+          <span className="w-5 h-5 rounded-full bg-[#171512] text-white text-[11px] font-bold flex items-center justify-center">
+            3
+          </span>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-[#171512]">
+            Material & Component Variables
+          </h2>
+        </div>
+
+        {/* PRIMARY WOOD & MULTIPLIER */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pb-5 border-b border-[#f0eae1]">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[11px] font-bold text-[#4a433b]">Type of Wood</label>
+              {selectedWood && (
+                <span className="text-[10px] font-medium text-[#746b61]">
+                  Ref: ₹{(selectedWood.rate_per_cft || 0).toLocaleString()}/CFT
+                </span>
               )}
             </div>
-          </div>
-          <div className="flex flex-col gap-1.5 sm:col-span-2 mt-2">
-            <label className="text-xs font-semibold text-[#4a443e]">Short Description / Tagline (1-2 lines)</label>
-            <textarea value={formData.notes} onChange={(e) => handleChange('notes', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb] min-h-[50px]" placeholder="e.g. Monolithic slab shaped by nature..." />
-          </div>
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <label className="text-xs font-semibold text-[#4a443e]">Inspiration & Backstory (Optional)</label>
-            <textarea value={formData.inspiration} onChange={(e) => handleChange('inspiration', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb] min-h-[80px]" placeholder="e.g. Crafted from a single Monkey Pod slab..." />
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
-        <h3 className="text-xs uppercase font-bold tracking-wider text-[#171512] mb-4 flex items-center gap-2">
-          <span className="w-5 h-5 rounded-full bg-[#171512] text-white flex items-center justify-center text-[10px]">2</span>
-          Reference Dimensions
-        </h3>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Length (In)</label>
-            <input type="number" value={formData.dimLength} onChange={(e) => handleChange('dimLength', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" placeholder="L" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Width (In)</label>
-            <input type="number" value={formData.dimWidth} onChange={(e) => handleChange('dimWidth', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" placeholder="W" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Height (In)</label>
-            <input type="number" value={formData.dimHeight} onChange={(e) => handleChange('dimHeight', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" placeholder="H" />
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
-        <h3 className="text-xs uppercase font-bold tracking-wider text-[#171512] mb-4 flex items-center gap-2">
-          <span className="w-5 h-5 rounded-full bg-[#171512] text-white flex items-center justify-center text-[10px]">3</span>
-          Material & Component Variables
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Solid Wood Base</label>
-            <select value={formData.woodTypeId} onChange={(e) => handleChange('woodTypeId', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]">
-              {woodMaster.map(w => (<option key={w.id} value={w.id}>{w.name}</option>))}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Wood Quantity (CFT)</label>
-            <input type="number" step="0.01" value={formData.woodCft} onChange={(e) => handleChange('woodCft', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-          </div>
-          
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Plywood Selection</label>
-            <select 
-              value={formData.plywoodTypeId} 
-              onChange={(e) => { 
-                const newId = e.target.value;
-                handleChange('plywoodTypeId', newId); 
-                
-                const ply = plywoodMaster?.find(p => p.id.toString() === newId.toString());
-                if (ply?.name?.toLowerCase() === 'none') {
-                  handleChange('plywoodQty', 0);
-                }
-              }} 
-              className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]"
+            <select
+              value={formData.woodTypeId}
+              onChange={(e) => handleChange('woodTypeId', e.target.value)}
+              className="w-full p-2.5 text-sm bg-white border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
             >
-              {plywoodMaster.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
+              {woodMaster.map(wood => (
+                <option key={wood.id} value={wood.id}>{wood.name}</option>
+              ))}
             </select>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Plywood Quantity (Sheets)</label>
-            <input 
-              type="number" 
-              step="0.25" 
-              value={formData.plywoodQty} 
-              onChange={(e) => handleChange('plywoodQty', e.target.value)} 
-              disabled={isPlywoodNone}
-              className={`p-2 border border-[#dcd3c9] rounded-md text-sm transition-colors ${isPlywoodNone ? 'bg-[#f4f1eb] text-[#8c8378] cursor-not-allowed opacity-70' : 'bg-[#fdfcfb]'}`}
-              placeholder={isPlywoodNone ? "Not Applicable" : "0"}
+
+          <div>
+            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
+              Wood Quantity (CFT)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={formData.woodCft}
+              onChange={(e) => handleChange('woodCft', e.target.value)}
+              placeholder="0.00"
+              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
             />
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Labour Output (Hours)</label>
-            <input type="number" value={formData.labourHours} onChange={(e) => handleChange('labourHours', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
+          <div>
+            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
+              Multiplier (₹ / CFT)
+            </label>
+            <input
+              type="number"
+              value={formData.multiplier}
+              onChange={(e) => handleChange('multiplier', e.target.value)}
+              placeholder="e.g. 14000"
+              className="w-full p-2.5 text-sm font-semibold border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+            />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Custom Labour Rate (₹/Hr)</label>
-            <input type="number" value={formData.labourRate} onChange={(e) => handleChange('labourRate', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
+        </div>
+
+        {/* FIXED COMMON GRID: RATTAN, FABRIC + CUSHION, PACKAGING */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 py-5 border-b border-[#f0eae1]">
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[11px] font-bold text-[#4a433b]">
+                Rattan ({rattanMaster?.unit || 'sqft'})
+              </label>
+              {rattanMaster && (
+                <span className="text-[10px] text-[#746b61]">
+                  ₹{rattanMaster.rate?.toLocaleString()}/{rattanMaster.unit || 'sqft'}
+                </span>
+              )}
+            </div>
+            <input
+              type="number"
+              step="0.1"
+              value={formData.rattanSqft}
+              onChange={(e) => handleChange('rattanSqft', e.target.value)}
+              placeholder="0"
+              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+            />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Finishing Treatment</label>
-            <select value={formData.finishingTypeId} onChange={(e) => handleChange('finishingTypeId', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]">
-              {finishingMaster.map(f => (<option key={f.id} value={f.id}>{f.name}</option>))}
-            </select>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[11px] font-bold text-[#4a433b]">
+                Fabric + Cushion ({cushionMaster?.unit || 'mtr'})
+              </label>
+              {cushionMaster && (
+                <span className="text-[10px] text-[#746b61]">
+                  ₹{cushionMaster.rate?.toLocaleString()}/{cushionMaster.unit || 'mtr'}
+                </span>
+              )}
+            </div>
+            <input
+              type="number"
+              step="0.1"
+              value={formData.cushionQty}
+              onChange={(e) => handleChange('cushionQty', e.target.value)}
+              placeholder="0"
+              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+            />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Hardware & Misc. Materials (₹)</label>
-            <input type="number" value={formData.hardwareCost} onChange={(e) => handleChange('hardwareCost', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" placeholder="Brass, Cane, Legs, etc." />
+
+          <div>
+            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
+              Packaging Cost (₹)
+            </label>
+            <input
+              type="number"
+              value={formData.packagingCost}
+              onChange={(e) => handleChange('packagingCost', e.target.value)}
+              placeholder="0"
+              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+            />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Fabric Yards (Meters)</label>
-            <input type="number" step="0.1" value={formData.fabricMeters} onChange={(e) => handleChange('fabricMeters', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
+        </div>
+
+        {/* DYNAMIC MISC ADD-ONS (PLYWOOD, BRASS, METAL, HINGES, HANDLES, ETC.) */}
+        <div className="pt-5">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#4a433b]">
+                Additional Components (Optional)
+              </h3>
+              <p className="text-[10px] text-[#746b61]">
+                Plywood, Brass, Metal legs, Hinges, Door handles, etc.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleAddMiscRow}
+              className="px-3 py-1.5 bg-[#f4f1eb] hover:bg-[#e8e1d7] text-[#171512] text-[11px] font-bold uppercase tracking-wider rounded transition"
+            >
+              + Add Component
+            </button>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Fabric Cost Base (₹/Mtr)</label>
-            <input type="number" value={formData.fabricRate} onChange={(e) => handleChange('fabricRate', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Premium Foam Core (₹)</label>
-            <input type="number" value={formData.foamCost} onChange={(e) => handleChange('foamCost', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-[#4a443e]">Crating & Packaging (₹)</label>
-            <input type="number" value={formData.packagingCost} onChange={(e) => handleChange('packagingCost', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-          </div>
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <label className="text-xs font-semibold text-[#4a443e]">Indirect Overheads Allocation (%)</label>
-            <input type="number" value={formData.overheadsPercent} onChange={(e) => handleChange('overheadsPercent', e.target.value)} className="p-2 border border-[#dcd3c9] rounded-md text-sm bg-[#fdfcfb]" />
-          </div>
+
+          {currentAddons.length > 0 && (
+            <div className="space-y-2.5 mt-3">
+              {currentAddons.map((row, idx) => {
+                const matchedMaster = miscAddonsList.find(a => a.id === row.addon_id);
+                return (
+                  <div
+                    key={idx}
+                    className="grid grid-cols-12 gap-2.5 items-center bg-[#faf8f5] p-2.5 rounded-md border border-[#e8e1d7]"
+                  >
+                    <div className="col-span-7">
+                      <select
+                        value={row.addon_id}
+                        onChange={(e) => handleMiscRowChange(idx, 'addon_id', e.target.value)}
+                        className="w-full p-2 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
+                      >
+                        {miscAddonsList.map(opt => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.name} (₹{opt.rate?.toLocaleString()}/{opt.unit})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="col-span-3">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={row.qty}
+                        onChange={(e) => handleMiscRowChange(idx, 'qty', e.target.value)}
+                        placeholder={matchedMaster?.unit || 'Qty'}
+                        className="w-full p-2 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
+                      />
+                    </div>
+
+                    <div className="col-span-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMiscRow(idx)}
+                        className="text-xs font-semibold text-red-600 hover:text-red-800 px-2 py-1"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
