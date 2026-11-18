@@ -24,9 +24,51 @@ export default function CostingForm({
   onCategoryChange
 }) {
   const [uploading, setUploading] = useState(false);
+  const [dimUnit, setDimUnit] = useState('in'); // 'in' or 'ft'
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // --- WHOLE-INTEGER DIMENSION CONVERSION HELPERS ---
+  const handleInchInput = (field, rawVal) => {
+    if (rawVal === '') {
+      handleChange(field, '');
+      return;
+    }
+    const wholeInches = Math.max(0, Math.round(Number(rawVal) || 0));
+    handleChange(field, String(wholeInches));
+  };
+
+  const getFeetPart = (totalInches) => {
+    const num = Math.round(Number(totalInches) || 0);
+    return num > 0 ? Math.floor(num / 12) : '';
+  };
+
+  const getInchPart = (totalInches) => {
+    const num = Math.round(Number(totalInches) || 0);
+    return num > 0 ? num % 12 : '';
+  };
+
+  const handleFtInChange = (field, part, rawVal) => {
+    const currentTotal = Math.round(Number(formData[field]) || 0);
+    const currentFt = Math.floor(currentTotal / 12);
+    const currentIn = currentTotal % 12;
+
+    const cleanVal = rawVal === '' ? 0 : Math.max(0, Math.round(Number(rawVal) || 0));
+    const newFt = part === 'ft' ? cleanVal : currentFt;
+    const newIn = part === 'in' ? cleanVal : currentIn;
+
+    const newTotal = newFt * 12 + newIn;
+    handleChange(field, newTotal > 0 ? String(newTotal) : '');
+  };
+
+  const formatFtInPreview = (totalInches) => {
+    const num = Math.round(Number(totalInches) || 0);
+    if (!num) return '';
+    const ft = Math.floor(num / 12);
+    const inc = num % 12;
+    return `${ft}' ${inc}"`;
   };
 
   const selectedWood = woodMaster.find(w => String(w.id) === String(formData.woodTypeId));
@@ -211,7 +253,7 @@ export default function CostingForm({
                 <img
                   src={formData.image_base64}
                   alt="Product preview"
-                  className="h-32 w-auto mx-auto rounded object-cover border border-[#e1d8cd]"
+                  className="h-32 w-auto mx-auto rounded object-contain border border-[#e1d8cd] bg-[#faf8f5] p-1"
                 />
                 <p className="text-[11px] text-[#746b61] font-medium">Click to replace photo</p>
               </div>
@@ -261,49 +303,123 @@ export default function CostingForm({
         </div>
       </div>
 
-      {/* SECTION 2: REFERENCE DIMENSIONS */}
+      {/* SECTION 2: REFERENCE DIMENSIONS (WITH INCHES / FT+IN TOGGLE) */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
-        <div className="flex items-center gap-2.5 mb-5">
-          <span className="w-5 h-5 rounded-full bg-[#171512] text-white text-[11px] font-bold flex items-center justify-center">
-            2
-          </span>
-          <h2 className="text-xs font-bold uppercase tracking-wider text-[#171512]">
-            Reference Dimensions
-          </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-5">
+          <div className="flex items-center gap-2.5">
+            <span className="w-5 h-5 rounded-full bg-[#171512] text-white text-[11px] font-bold flex items-center justify-center">
+              2
+            </span>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[#171512]">
+              Reference Dimensions
+            </h2>
+          </div>
+
+          {/* Unit Mode Pill Switch */}
+          <div className="inline-flex rounded-md border border-[#dcd3c9] bg-[#faf8f5] p-0.5">
+            <button
+              type="button"
+              onClick={() => setDimUnit('in')}
+              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ${
+                dimUnit === 'in'
+                  ? 'bg-[#171512] text-white'
+                  : 'text-[#746b61] hover:text-[#171512]'
+              }`}
+            >
+              Inches (&quot;)
+            </button>
+            <button
+              type="button"
+              onClick={() => setDimUnit('ft')}
+              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ${
+                dimUnit === 'ft'
+                  ? 'bg-[#171512] text-white'
+                  : 'text-[#746b61] hover:text-[#171512]'
+              }`}
+            >
+              Ft + In (&apos; &quot;)
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">Length (In)</label>
-            <input
-              type="number"
-              value={formData.dimLength}
-              onChange={(e) => handleChange('dimLength', e.target.value)}
-              placeholder="L"
-              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
-            />
+        {dimUnit === 'in' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              { label: 'Length (In)', field: 'dimLength', placeholder: 'L (in)' },
+              { label: 'Width (In)', field: 'dimWidth', placeholder: 'W (in)' },
+              { label: 'Height (In)', field: 'dimHeight', placeholder: 'H (in)' }
+            ].map(({ label, field, placeholder }) => (
+              <div key={field}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-[#4a433b]">{label}</label>
+                  {formData[field] && (
+                    <span className="text-[10px] font-medium text-[#746b61]">
+                      = {formatFtInPreview(formData[field])}
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={formData[field]}
+                  onChange={(e) => handleInchInput(field, e.target.value)}
+                  placeholder={placeholder}
+                  className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+                />
+              </div>
+            ))}
           </div>
-          <div>
-            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">Width (In)</label>
-            <input
-              type="number"
-              value={formData.dimWidth}
-              onChange={(e) => handleChange('dimWidth', e.target.value)}
-              placeholder="W"
-              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
-            />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              { label: 'Length', field: 'dimLength' },
+              { label: 'Width', field: 'dimWidth' },
+              { label: 'Height', field: 'dimHeight' }
+            ].map(({ label, field }) => (
+              <div key={field}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-[#4a433b]">{label}</label>
+                  {formData[field] && (
+                    <span className="text-[10px] font-medium text-[#746b61]">
+                      Total: {Math.round(Number(formData[field]))}&quot;
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={getFeetPart(formData[field])}
+                      onChange={(e) => handleFtInChange(field, 'ft', e.target.value)}
+                      placeholder="0"
+                      className="w-full p-2.5 pr-7 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+                    />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-[#746b61]">
+                      ft
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={getInchPart(formData[field])}
+                      onChange={(e) => handleFtInChange(field, 'in', e.target.value)}
+                      placeholder="0"
+                      className="w-full p-2.5 pr-7 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+                    />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-[#746b61]">
+                      in
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-          <div>
-            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">Height (In)</label>
-            <input
-              type="number"
-              value={formData.dimHeight}
-              onChange={(e) => handleChange('dimHeight', e.target.value)}
-              placeholder="H"
-              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
-            />
-          </div>
-        </div>
+        )}
       </div>
 
       {/* SECTION 3: SIMPLIFIED WOOD MULTIPLIER & ADD-ONS */}

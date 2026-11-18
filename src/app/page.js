@@ -24,6 +24,16 @@ const CATEGORY_PREFIXES = {
 const ADMIN_EMAILS = ['arovan011@gmail.com'];
 const FREELANCER_EMAILS = ['freelancer@arovan.com'];
 
+// Helper: Convert whole inches into compact Ft + In string (e.g., 72 -> 6'0" or 66 -> 5'6")
+const toFtInLabel = (val, axis) => {
+  const totalIn = Math.round(Number(val) || 0);
+  if (!totalIn) return null;
+  const ft = Math.floor(totalIn / 12);
+  const inc = totalIn % 12;
+  const ftInStr = ft > 0 ? (inc > 0 ? `${ft}'${inc}"` : `${ft}'`) : `${inc}"`;
+  return `${ftInStr}${axis}`;
+};
+
 export default function Home() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -224,9 +234,9 @@ export default function Home() {
       image_base64: formData.image_base64 || null,
       notes: formData.notes.trim(),
       inspiration: formData.inspiration.trim(),
-      dim_length: parseFloat(formData.dimLength) || null,
-      dim_width: parseFloat(formData.dimWidth) || null,
-      dim_height: parseFloat(formData.dimHeight) || null,
+      dim_length: formData.dimLength ? Math.round(parseFloat(formData.dimLength)) : null,
+      dim_width: formData.dimWidth ? Math.round(parseFloat(formData.dimWidth)) : null,
+      dim_height: formData.dimHeight ? Math.round(parseFloat(formData.dimHeight)) : null,
       wood_type_id: parseInt(formData.woodTypeId, 10) || null,
       wood_cft: parseFloat(formData.woodCft) || 0,
       multiplier: parseFloat(formData.multiplier) || 0,
@@ -265,9 +275,9 @@ export default function Home() {
       image_base64: product.image_base64 || '',
       notes: product.notes || '',
       inspiration: product.inspiration || '',
-      dimLength: product.dim_length || '',
-      dimWidth: product.dim_width || '',
-      dimHeight: product.dim_height || '',
+      dimLength: product.dim_length ? String(Math.round(product.dim_length)) : '',
+      dimWidth: product.dim_width ? String(Math.round(product.dim_width)) : '',
+      dimHeight: product.dim_height ? String(Math.round(product.dim_height)) : '',
       woodTypeId: product.wood_type_id || woodMaster[0]?.id || '',
       woodCft: product.wood_cft || '',
       multiplier: product.multiplier || '',
@@ -290,9 +300,9 @@ export default function Home() {
       image_base64: '',
       notes: product.notes || '',
       inspiration: product.inspiration || '',
-      dimLength: product.dim_length || '',
-      dimWidth: product.dim_width || '',
-      dimHeight: product.dim_height || '',
+      dimLength: product.dim_length ? String(Math.round(product.dim_length)) : '',
+      dimWidth: product.dim_width ? String(Math.round(product.dim_width)) : '',
+      dimHeight: product.dim_height ? String(Math.round(product.dim_height)) : '',
       woodTypeId: product.wood_type_id || woodMaster[0]?.id || '',
       woodCft: product.wood_cft || '',
       multiplier: product.multiplier || '',
@@ -332,13 +342,11 @@ export default function Home() {
     window.location.reload();
   };
 
-  // Toggle Client View and reset any individual card price reveals
   const handleToggleClientView = (checked) => {
     setClientViewMode(checked);
     setRevealedPrices({});
   };
 
-  // Toggle price visibility for a single product card while in Client View
   const toggleSingleProductPrice = (sku) => {
     setRevealedPrices(prev => ({
       ...prev,
@@ -621,13 +629,25 @@ export default function Home() {
                               woodMaster.find((w) => w.id === item.wood_type_id)?.name || 'Solid Wood';
                             const livePrice = calculateDynamicPrice(item);
 
-                            // Determine if this specific card's price should be hidden
                             const isCardPriceHidden = defaultHidePrices && !revealedPrices[item.sku];
 
-                            const hasDims = item.dim_length || item.dim_width || item.dim_height;
-                            const dimText = hasDims
-                              ? `📏 ${item.dim_length || '-'}"L × ${item.dim_width || '-'}"W × ${item.dim_height || '-'}"H`
-                              : '';
+                            // Build clean integer Inches & Ft+In strings
+                            const lIn = item.dim_length ? Math.round(item.dim_length) : null;
+                            const wIn = item.dim_width ? Math.round(item.dim_width) : null;
+                            const hIn = item.dim_height ? Math.round(item.dim_height) : null;
+                            const hasDims = Boolean(lIn || wIn || hIn);
+
+                            const inchesParts = [
+                              lIn ? `${lIn}"L` : null,
+                              wIn ? `${wIn}"W` : null,
+                              hIn ? `${hIn}"H` : null
+                            ].filter(Boolean);
+
+                            const ftInParts = [
+                              toFtInLabel(lIn, 'L'),
+                              toFtInLabel(wIn, 'W'),
+                              toFtInLabel(hIn, 'H')
+                            ].filter(Boolean);
 
                             return (
                               <div
@@ -695,17 +715,25 @@ export default function Home() {
                                       {item.name}
                                     </h3>
 
-                                    {/* Highlighted Wood Badge + Dimensions */}
-                                    <div className="flex flex-wrap items-center gap-2 mb-2.5">
+                                    {/* Line 1: Bold Wood Badge */}
+                                    <div className="mb-2">
                                       <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#171512] text-white text-[11px] font-bold tracking-wide">
                                         {woodName}
                                       </span>
-                                      {dimText && (
-                                        <span className="text-xs font-medium text-[#5c5349]">
-                                          {dimText}
-                                        </span>
-                                      )}
                                     </div>
+
+                                    {/* Line 2: Compact Dual Dimensions (Inches + Ft/In) */}
+                                    {hasDims && (
+                                      <div className="text-[11px] text-[#5c5349] bg-[#faf8f5] border border-[#e8e1d7] rounded px-2.5 py-1.5 mb-2.5 leading-snug">
+                                        <span className="font-semibold text-[#171512]">
+                                          📏 {inchesParts.join(' × ')}
+                                        </span>
+                                        <span className="mx-1.5 text-[#a3988c]">•</span>
+                                        <span className="text-[#746b61]">
+                                          {ftInParts.join(' × ')}
+                                        </span>
+                                      </div>
+                                    )}
 
                                     {item.notes && (
                                       <p className="text-xs text-[#4a433b] italic mb-2">
