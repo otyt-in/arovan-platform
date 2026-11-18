@@ -262,8 +262,6 @@ export default function Home() {
   };
 
   const handleSaveProduct = async (calculatedSellPrice) => {
-    rattan_sqft: 0,
-    cushion_qty: 0,
     const cleanSku = formData.sku.trim().toUpperCase();
     if (!cleanSku || !formData.name.trim()) {
       alert('Please enter both a SKU and a Product Name before saving.');
@@ -289,8 +287,8 @@ export default function Home() {
       wood_type_id: parseInt(formData.woodTypeId, 10) || null,
       wood_cft: parseFloat(formData.woodCft) || 0,
       multiplier: parseFloat(formData.multiplier) || 0,
-      rattan_sqft: parseFloat(formData.rattanSqft) || 0,
-      cushion_qty: parseFloat(formData.cushionQty) || 0,
+      rattan_sqft: 0,
+      cushion_qty: 0,
       packaging_cost: parseFloat(formData.packagingCost) || 0,
       addons: Array.isArray(formData.addons) ? formData.addons : [],
       estimated_selling_price: calculatedSellPrice,
