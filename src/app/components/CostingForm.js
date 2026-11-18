@@ -25,7 +25,7 @@ export default function CostingForm({
   onTrackUpload
 }) {
   const [uploading, setUploading] = useState(false);
-  const [dimUnit, setDimUnit] = useState('ft'); // 'in' or 'ft'
+  const [dimUnit, setDimUnit] = useState('ft'); // Default to Ft + In (' ")
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -86,7 +86,7 @@ export default function CostingForm({
       return;
     }
     const defaultItem = miscAddonsList[0];
-    const updated = [...currentAddons, { addon_id: defaultItem.id, qty: 1 }];
+    const updated = [...currentAddons, { addon_id: defaultItem.id, qty: '' }];
     handleChange('addons', updated);
   };
 
@@ -167,7 +167,6 @@ export default function CostingForm({
 
       const newUrl = publicUrlData.publicUrl;
 
-      // Track this upload in parent so unlinked uploads can be cleaned up on Save or Reset
       if (onTrackUpload) {
         onTrackUpload(newUrl);
       }
@@ -248,7 +247,7 @@ export default function CostingForm({
           </label>
           <label className="flex flex-col items-center justify-center border-2 border-dashed border-[#dcd3c9] rounded-lg p-5 cursor-pointer hover:bg-[#faf8f5] transition text-center">
             {uploading ? (
-              <p className="text-xs font-semibold text-[#746b61]">Compressing & uploading photo...</p>
+              <p className="text-xs font-semibold text-[#746b61]">Compressing &amp; uploading photo...</p>
             ) : formData.image_base64 ? (
               <div className="space-y-2">
                 <img
@@ -292,7 +291,7 @@ export default function CostingForm({
 
         <div>
           <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
-            Inspiration & Backstory (Optional)
+            Inspiration &amp; Backstory (Optional)
           </label>
           <textarea
             rows={2}
@@ -304,7 +303,7 @@ export default function CostingForm({
         </div>
       </div>
 
-      {/* SECTION 2: REFERENCE DIMENSIONS (WITH INCHES / FT+IN TOGGLE) */}
+      {/* SECTION 2: REFERENCE DIMENSIONS (DEFAULT FT + IN TOGGLE) */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-5">
           <div className="flex items-center gap-2.5">
@@ -316,19 +315,7 @@ export default function CostingForm({
             </h2>
           </div>
 
-          {/* Unit Mode Pill Switch */}
           <div className="inline-flex rounded-md border border-[#dcd3c9] bg-[#faf8f5] p-0.5">
-            <button
-              type="button"
-              onClick={() => setDimUnit('in')}
-              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ${
-                dimUnit === 'in'
-                  ? 'bg-[#171512] text-white'
-                  : 'text-[#746b61] hover:text-[#171512]'
-              }`}
-            >
-              Inches (&quot;)
-            </button>
             <button
               type="button"
               onClick={() => setDimUnit('ft')}
@@ -340,38 +327,21 @@ export default function CostingForm({
             >
               Ft + In (&apos; &quot;)
             </button>
+            <button
+              type="button"
+              onClick={() => setDimUnit('in')}
+              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ${
+                dimUnit === 'in'
+                  ? 'bg-[#171512] text-white'
+                  : 'text-[#746b61] hover:text-[#171512]'
+              }`}
+            >
+              Inches (&quot;)
+            </button>
           </div>
         </div>
 
-        {dimUnit === 'in' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              { label: 'Length (In)', field: 'dimLength', placeholder: 'L (in)' },
-              { label: 'Width (In)', field: 'dimWidth', placeholder: 'W (in)' },
-              { label: 'Height (In)', field: 'dimHeight', placeholder: 'H (in)' }
-            ].map(({ label, field, placeholder }) => (
-              <div key={field}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[11px] font-bold text-[#4a433b]">{label}</label>
-                  {formData[field] && (
-                    <span className="text-[10px] font-medium text-[#746b61]">
-                      = {formatFtInPreview(formData[field])}
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="number"
-                  step="1"
-                  min="0"
-                  value={formData[field]}
-                  onChange={(e) => handleInchInput(field, e.target.value)}
-                  placeholder={placeholder}
-                  className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
-                />
-              </div>
-            ))}
-          </div>
-        ) : (
+        {dimUnit === 'ft' ? (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
               { label: 'Length', field: 'dimLength' },
@@ -420,6 +390,34 @@ export default function CostingForm({
               </div>
             ))}
           </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              { label: 'Length (In)', field: 'dimLength', placeholder: 'L (in)' },
+              { label: 'Width (In)', field: 'dimWidth', placeholder: 'W (in)' },
+              { label: 'Height (In)', field: 'dimHeight', placeholder: 'H (in)' }
+            ].map(({ label, field, placeholder }) => (
+              <div key={field}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-[#4a433b]">{label}</label>
+                  {formData[field] && (
+                    <span className="text-[10px] font-medium text-[#746b61]">
+                      = {formatFtInPreview(formData[field])}
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={formData[field]}
+                  onChange={(e) => handleInchInput(field, e.target.value)}
+                  placeholder={placeholder}
+                  className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+                />
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
@@ -430,7 +428,7 @@ export default function CostingForm({
             3
           </span>
           <h2 className="text-xs font-bold uppercase tracking-wider text-[#171512]">
-            Material & Component Variables
+            Material &amp; Component Variables
           </h2>
         </div>
 
@@ -484,7 +482,7 @@ export default function CostingForm({
           </div>
         </div>
 
-        {/* FIXED COMMON GRID: RATTAN, FABRIC + CUSHION, PACKAGING */}
+        {/* FIXED COMMON GRID: RATTAN (PER SQFT), FABRIC + CUSHION (LUMP SUM ₹), PACKAGING (LUMP SUM ₹) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 py-5 border-b border-[#f0eae1]">
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -510,20 +508,20 @@ export default function CostingForm({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-[11px] font-bold text-[#4a433b]">
-                Fabric + Cushion ({cushionMaster?.unit || 'mtr'})
+                Fabric + Cushion (₹)
               </label>
-              {cushionMaster && (
+              {cushionMaster && cushionMaster.rate > 0 && (
                 <span className="text-[10px] text-[#746b61]">
-                  ₹{cushionMaster.rate?.toLocaleString()}/{cushionMaster.unit || 'mtr'}
+                  Ref: ₹{cushionMaster.rate?.toLocaleString()}/{cushionMaster.unit || 'mtr'}
                 </span>
               )}
             </div>
             <input
               type="number"
-              step="0.1"
+              step="1"
               value={formData.cushionQty}
               onChange={(e) => handleChange('cushionQty', e.target.value)}
-              placeholder="0"
+              placeholder="Lump sum ₹"
               className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
             />
           </div>
@@ -542,7 +540,7 @@ export default function CostingForm({
           </div>
         </div>
 
-        {/* DYNAMIC MISC ADD-ONS (PLYWOOD, BRASS, METAL, HINGES, HANDLES, ETC.) */}
+        {/* DYNAMIC MISC ADD-ONS (PLYWOOD PER SQFT + MANUAL LUMP-SUM HARDWARE/MISC) */}
         <div className="pt-5">
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -550,7 +548,7 @@ export default function CostingForm({
                 Additional Components (Optional)
               </h3>
               <p className="text-[10px] text-[#746b61]">
-                Plywood, Brass, Metal legs, Hinges, Door handles, etc.
+                Plywood calculates by sqft; Hardware &amp; misc items take a manual lump-sum ₹ per product.
               </p>
             </div>
             <button
@@ -566,34 +564,54 @@ export default function CostingForm({
             <div className="space-y-2.5 mt-3">
               {currentAddons.map((row, idx) => {
                 const matchedMaster = miscAddonsList.find(a => a.id === row.addon_id);
+                const isPerUnit = matchedMaster?.pricing_type === 'per_unit';
+                const calculatedLineTotal = isPerUnit
+                  ? Math.round((parseFloat(row.qty) || 0) * (matchedMaster?.rate || 0))
+                  : 0;
+
                 return (
                   <div
                     key={idx}
                     className="grid grid-cols-12 gap-2.5 items-center bg-[#faf8f5] p-2.5 rounded-md border border-[#e8e1d7]"
                   >
-                    <div className="col-span-7">
+                    <div className="col-span-6 sm:col-span-7">
                       <select
                         value={row.addon_id}
                         onChange={(e) => handleMiscRowChange(idx, 'addon_id', e.target.value)}
                         className="w-full p-2 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
                       >
-                        {miscAddonsList.map(opt => (
-                          <option key={opt.id} value={opt.id}>
-                            {opt.name} (₹{opt.rate?.toLocaleString()}/{opt.unit})
-                          </option>
-                        ))}
+                        {miscAddonsList.map(opt => {
+                          const optLabel =
+                            opt.pricing_type === 'per_unit'
+                              ? `${opt.name} (₹${opt.rate?.toLocaleString()}/${opt.unit})`
+                              : opt.rate > 0
+                              ? `${opt.name} (Ref: ₹${opt.rate?.toLocaleString()})`
+                              : opt.name;
+                          return (
+                            <option key={opt.id} value={opt.id}>
+                              {optLabel}
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
 
-                    <div className="col-span-3">
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={row.qty}
-                        onChange={(e) => handleMiscRowChange(idx, 'qty', e.target.value)}
-                        placeholder={matchedMaster?.unit || 'Qty'}
-                        className="w-full p-2 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
-                      />
+                    <div className="col-span-4 sm:col-span-3">
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step={isPerUnit ? '0.1' : '1'}
+                          value={row.qty}
+                          onChange={(e) => handleMiscRowChange(idx, 'qty', e.target.value)}
+                          placeholder={isPerUnit ? `${matchedMaster?.unit || 'sqft'}` : 'Lump sum ₹'}
+                          className="w-full p-2 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
+                        />
+                        {isPerUnit && calculatedLineTotal > 0 && (
+                          <p className="text-[10px] font-semibold text-[#5c5349] mt-0.5 text-right">
+                            = ₹{calculatedLineTotal.toLocaleString()}
+                          </p>
+                        )}
+                      </div>
                     </div>
 
                     <div className="col-span-2 text-right">

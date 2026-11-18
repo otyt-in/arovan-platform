@@ -12,27 +12,25 @@ export default function CostingSummary({
   const multiplier = parseFloat(formData.multiplier) || 0;
   const baseWoodCost = woodCft * multiplier;
 
-  // 2. Fixed Common Grid Add-ons (Rattan & Fabric + Cushion)
+  // 2. Rattan (Per Sqft * Rate from Settings)
   const rattanMaster = addonsMaster.find(a => a.name.toLowerCase() === 'rattan');
-  const cushionMaster = addonsMaster.find(a => a.name.toLowerCase().includes('cushion'));
-
   const rattanQty = parseFloat(formData.rattanSqft) || 0;
   const rattanCost = rattanQty * (rattanMaster?.rate || 0);
 
-  const cushionQty = parseFloat(formData.cushionQty) || 0;
-  const cushionCost = cushionQty * (cushionMaster?.rate || 0);
+  // 3. Fabric + Cushion (Direct Lump Sum ₹ entered on form)
+  const cushionCost = parseFloat(formData.cushionQty) || 0;
 
-  // 3. Dynamic Misc Add-ons (Plywood, Brass, Metal, Hinges, Door Handles, etc.)
+  // 4. Dynamic Misc Add-ons (Per-Unit items multiply by rate; Lump-Sum items use entered ₹ directly)
   const currentAddons = Array.isArray(formData.addons) ? formData.addons : [];
   const resolvedMiscAddons = currentAddons
     .map(item => {
       const master = addonsMaster.find(a => a.id === item.addon_id);
-      const qty = parseFloat(item.qty) || 0;
-      const cost = qty * (master?.rate || 0);
+      const enteredVal = parseFloat(item.qty) || 0;
+      const isPerUnit = master?.pricing_type === 'per_unit';
+      const cost = isPerUnit ? enteredVal * (master?.rate || 0) : enteredVal;
+
       return {
         name: master?.name || 'Component',
-        qty,
-        unit: master?.unit || '',
         cost
       };
     })
@@ -40,10 +38,10 @@ export default function CostingSummary({
 
   const miscAddonsTotal = resolvedMiscAddons.reduce((sum, item) => sum + item.cost, 0);
 
-  // 4. Packaging Cost
+  // 5. Packaging Cost (Direct Lump Sum ₹)
   const packagingCost = parseFloat(formData.packagingCost) || 0;
 
-  // 5. Final Selling Price (Rounded up to nearest ₹1,000)
+  // 6. Final Selling Price (Rounded up to nearest ₹1,000)
   const rawTotal = baseWoodCost + rattanCost + cushionCost + miscAddonsTotal + packagingCost;
   const estimatedSellingPrice = rawTotal > 0 ? Math.ceil(rawTotal / 1000) * 1000 : 0;
 

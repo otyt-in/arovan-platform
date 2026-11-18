@@ -62,13 +62,23 @@ export default function Settings({ woodMaster, addonsMaster, refreshData }) {
   };
 
   const addAddonRow = () => {
-    setAddons([...addons, { name: '', unit: 'nos', rate: 0, is_fixed_grid: false, isNew: true }]);
+    setAddons([
+      ...addons,
+      {
+        name: '',
+        unit: 'lump sum',
+        rate: 0,
+        is_fixed_grid: false,
+        pricing_type: 'lump_sum',
+        isNew: true
+      }
+    ]);
   };
 
   const deleteAddonRow = async (index) => {
     const item = addons[index];
     if (item.is_fixed_grid) {
-      alert('Core form items (Rattan and Fabric + Cushion) cannot be deleted, only their unit or rate can be edited.');
+      alert('Core form items (Rattan and Fabric + Cushion) cannot be deleted, only their settings can be edited.');
       return;
     }
     if (item.id) {
@@ -111,21 +121,25 @@ export default function Settings({ woodMaster, addonsMaster, refreshData }) {
       const existingAddons = addons.filter(a => a.id && a.name.trim() !== '');
       const newAddons = addons
         .filter(a => !a.id && a.name.trim() !== '')
-        .map(({ name, unit, rate, is_fixed_grid }) => ({
+        .map(({ name, unit, rate, is_fixed_grid, pricing_type }) => ({
           name: name.trim(),
-          unit: unit.trim() || 'nos',
+          unit: unit.trim() || 'lump sum',
           rate: rate || 0,
-          is_fixed_grid: Boolean(is_fixed_grid)
+          is_fixed_grid: Boolean(is_fixed_grid),
+          pricing_type: pricing_type || 'lump_sum'
         }));
 
       if (existingAddons.length > 0) {
-        const cleanExistingAddons = existingAddons.map(({ id, name, unit, rate, is_fixed_grid }) => ({
-          id,
-          name: name.trim(),
-          unit: unit.trim() || 'nos',
-          rate: rate || 0,
-          is_fixed_grid: Boolean(is_fixed_grid)
-        }));
+        const cleanExistingAddons = existingAddons.map(
+          ({ id, name, unit, rate, is_fixed_grid, pricing_type }) => ({
+            id,
+            name: name.trim(),
+            unit: unit.trim() || 'lump sum',
+            rate: rate || 0,
+            is_fixed_grid: Boolean(is_fixed_grid),
+            pricing_type: pricing_type || 'lump_sum'
+          })
+        );
         const { error } = await supabase.from('addons_master').upsert(cleanExistingAddons);
         if (error) throw error;
       }
@@ -135,7 +149,7 @@ export default function Settings({ woodMaster, addonsMaster, refreshData }) {
       }
 
       await refreshData();
-      alert('Configuration saved! All product prices have been synced with the new rates.');
+      alert('Configuration saved! All product prices have been synced.');
     } catch (err) {
       console.error('Error saving settings:', err);
       alert('Failed to save settings: ' + err.message);
@@ -176,13 +190,13 @@ export default function Settings({ woodMaster, addonsMaster, refreshData }) {
 
   // --- MAIN SETTINGS DASHBOARD ---
   return (
-    <div className="max-w-4xl mx-auto bg-white rounded-lg border border-[#e1d8cd] shadow-sm overflow-hidden">
+    <div className="max-w-5xl mx-auto bg-white rounded-lg border border-[#e1d8cd] shadow-sm overflow-hidden">
       {/* Top Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-5 border-b border-[#e1d8cd] bg-[#faf8f5]">
         <div>
           <h2 className="font-serif text-xl text-[#171512]">Master Rate Configuration</h2>
           <p className="text-xs text-[#746b61] mt-0.5">
-            Changes here automatically recalculate live prices across your Product Library.
+            Per-unit items auto-calculate across your Library; Lump-sum items show as reference hints on the form.
           </p>
         </div>
         <button
@@ -204,7 +218,7 @@ export default function Settings({ woodMaster, addonsMaster, refreshData }) {
               : 'border-transparent text-[#746b61] hover:text-[#171512]'
           }`}
         >
-          Add-ons & Components ({addons.length})
+          Add-ons &amp; Components ({addons.length})
         </button>
         <button
           onClick={() => setActiveTab('woods')}
@@ -222,14 +236,16 @@ export default function Settings({ woodMaster, addonsMaster, refreshData }) {
       {activeTab === 'addons' && (
         <div className="p-6">
           <div className="mb-4 p-3 bg-[#f4f1eb] rounded-md text-xs text-[#5c5349]">
-            Set the <strong>selling rate (₹)</strong> per unit for Rattan, Fabric + Cushion, and any additional components (Plywood, Brass, Metal, Hinges, Door Handles, etc.).
+            <strong>Per-Unit (Qty × Rate):</strong> Used for Rattan &amp; Plywood (calculates automatically).{' '}
+            <strong>Lump-Sum (Ref Hint):</strong> Shows the rate as a reference hint while you enter an exact ₹ lump-sum per product.
           </div>
 
           <div className="space-y-3">
             <div className="hidden sm:grid sm:grid-cols-12 gap-3 text-[10px] font-bold uppercase tracking-wider text-[#746b61] px-2">
-              <div className="col-span-5">Component / Material Name</div>
-              <div className="col-span-3">Unit (e.g. mtr, sqft, nos)</div>
-              <div className="col-span-3">Selling Rate (₹)</div>
+              <div className="col-span-4">Component Name</div>
+              <div className="col-span-3">Pricing Mode</div>
+              <div className="col-span-2">Unit</div>
+              <div className="col-span-2">Rate / Ref (₹)</div>
               <div className="col-span-1 text-right">Action</div>
             </div>
 
@@ -238,13 +254,13 @@ export default function Settings({ woodMaster, addonsMaster, refreshData }) {
                 key={item.id || `new-addon-${idx}`}
                 className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center p-3 sm:p-2 border sm:border-0 border-[#e1d8cd] rounded-md bg-[#faf8f5] sm:bg-transparent"
               >
-                <div className="sm:col-span-5 flex items-center gap-2">
+                <div className="sm:col-span-4 flex items-center gap-2">
                   <input
                     type="text"
                     value={item.name}
                     disabled={item.is_fixed_grid}
                     onChange={(e) => handleAddonChange(idx, 'name', e.target.value)}
-                    placeholder="e.g. Brass Inlay"
+                    placeholder="e.g. Door Handles"
                     className="w-full p-2 text-sm border border-[#dcd3c9] rounded-md disabled:bg-[#f4f1eb] disabled:text-[#746b61] focus:outline-none focus:border-[#171512]"
                   />
                   {item.is_fixed_grid && (
@@ -255,16 +271,27 @@ export default function Settings({ woodMaster, addonsMaster, refreshData }) {
                 </div>
 
                 <div className="sm:col-span-3">
+                  <select
+                    value={item.pricing_type || 'lump_sum'}
+                    onChange={(e) => handleAddonChange(idx, 'pricing_type', e.target.value)}
+                    className="w-full p-2 text-xs font-semibold bg-white border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+                  >
+                    <option value="per_unit">Per-Unit (Qty × Rate)</option>
+                    <option value="lump_sum">Lump-Sum (Ref Hint)</option>
+                  </select>
+                </div>
+
+                <div className="sm:col-span-2">
                   <input
                     type="text"
                     value={item.unit}
                     onChange={(e) => handleAddonChange(idx, 'unit', e.target.value)}
-                    placeholder="mtr / sqft / nos"
+                    placeholder="sqft / mtr"
                     className="w-full p-2 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
                   />
                 </div>
 
-                <div className="sm:col-span-3">
+                <div className="sm:col-span-2">
                   <input
                     type="number"
                     value={item.rate}
