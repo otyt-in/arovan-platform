@@ -83,13 +83,12 @@ export default function CostingForm({
       return;
     }
     const defaultItem = addonsMaster[0];
-    const isCushion = defaultItem.name.toLowerCase().includes('cushion');
     const updated = [
       ...currentAddons,
       {
         addon_id: defaultItem.id,
         qty: '',
-        count: isCushion ? 1 : 1
+        count: 1
       }
     ];
     handleChange('addons', updated);
@@ -99,12 +98,10 @@ export default function CostingForm({
     const updated = [...currentAddons];
     if (field === 'addon_id') {
       const newId = parseInt(value, 10);
-      const matched = addonsMaster.find(a => a.id === newId);
-      const isCushion = matched?.name?.toLowerCase().includes('cushion');
       updated[index] = {
         addon_id: newId,
         qty: '',
-        count: isCushion ? 1 : 1
+        count: 1
       };
     } else if (field === 'count') {
       updated[index] = {
@@ -516,7 +513,7 @@ export default function CostingForm({
           </div>
         </div>
 
-        {/* DYNAMIC ADDITIONAL COMPONENTS (RATTAN, FABRIC + CUSHION, PLYWOOD, BRASS, METAL, HINGES, HANDLES) */}
+        {/* DYNAMIC ADDITIONAL COMPONENTS */}
         <div className="pt-5">
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -550,19 +547,19 @@ export default function CostingForm({
                   ? Math.round(enteredVal * cushionCount)
                   : isPerUnit
                   ? Math.round(enteredVal * (matchedMaster?.rate || 0))
-                  : 0;
+                  : Math.round(enteredVal);
 
                 return (
                   <div
                     key={idx}
-                    className="grid grid-cols-12 gap-2.5 items-center bg-[#faf8f5] p-2.5 rounded-md border border-[#e8e1d7]"
+                    className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center bg-[#faf8f5] px-3 py-2.5 rounded-md border border-[#e8e1d7]"
                   >
-                    {/* Component Selector */}
-                    <div className={isCushion ? 'col-span-12 sm:col-span-5' : 'col-span-6 sm:col-span-7'}>
+                    {/* 1. Component Selector (5 cols on desktop) */}
+                    <div className="sm:col-span-5">
                       <select
                         value={row.addon_id}
                         onChange={(e) => handleComponentRowChange(idx, 'addon_id', e.target.value)}
-                        className="w-full p-2 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
+                        className="w-full h-9 px-2.5 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
                       >
                         {addonsMaster.map(opt => {
                           const optIsCushion = opt.name.toLowerCase().includes('cushion');
@@ -581,18 +578,23 @@ export default function CostingForm({
                       </select>
                     </div>
 
-                    {/* Input Fields: 2 boxes for Fabric + Cushion (Price ₹ x No. of), 1 box for everything else */}
-                    {isCushion ? (
-                      <div className="col-span-10 sm:col-span-5">
+                    {/* 2. Input Fields (4 cols on desktop) */}
+                    <div className="sm:col-span-4">
+                      {isCushion ? (
                         <div className="grid grid-cols-2 gap-2">
-                          <input
-                            type="number"
-                            step="1"
-                            value={row.qty}
-                            onChange={(e) => handleComponentRowChange(idx, 'qty', e.target.value)}
-                            placeholder="Price ₹/ea"
-                            className="w-full p-2 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
-                          />
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[#746b61]">
+                              ₹
+                            </span>
+                            <input
+                              type="number"
+                              step="1"
+                              value={row.qty}
+                              onChange={(e) => handleComponentRowChange(idx, 'qty', e.target.value)}
+                              placeholder="Rate"
+                              className="w-full h-9 pl-6 pr-2 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
+                            />
+                          </div>
                           <div className="relative">
                             <input
                               type="number"
@@ -600,44 +602,50 @@ export default function CostingForm({
                               min="1"
                               value={row.count ?? 1}
                               onChange={(e) => handleComponentRowChange(idx, 'count', e.target.value)}
-                              placeholder="No. of"
-                              className="w-full p-2 pr-8 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
+                              placeholder="Qty"
+                              className="w-full h-9 pl-2.5 pr-8 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
                             />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[#746b61]">
+                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[#746b61]">
                               nos
                             </span>
                           </div>
                         </div>
-                        {calculatedLineTotal > 0 && (
-                          <p className="text-[10px] font-semibold text-[#5c5349] mt-0.5 text-right">
-                            Total = ₹{calculatedLineTotal.toLocaleString()}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="col-span-4 sm:col-span-3">
-                        <input
-                          type="number"
-                          step={isPerUnit ? '0.1' : '1'}
-                          value={row.qty}
-                          onChange={(e) => handleComponentRowChange(idx, 'qty', e.target.value)}
-                          placeholder={isPerUnit ? `${matchedMaster?.unit || 'sqft'}` : 'Lump sum ₹'}
-                          className="w-full p-2 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
-                        />
-                        {isPerUnit && calculatedLineTotal > 0 && (
-                          <p className="text-[10px] font-semibold text-[#5c5349] mt-0.5 text-right">
-                            = ₹{calculatedLineTotal.toLocaleString()}
-                          </p>
-                        )}
-                      </div>
-                    )}
+                      ) : (
+                        <div className="relative">
+                          {!isPerUnit && (
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[#746b61]">
+                              ₹
+                            </span>
+                          )}
+                          <input
+                            type="number"
+                            step={isPerUnit ? '0.1' : '1'}
+                            value={row.qty}
+                            onChange={(e) => handleComponentRowChange(idx, 'qty', e.target.value)}
+                            placeholder={isPerUnit ? '0' : 'Lump sum'}
+                            className={`w-full h-9 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512] ${
+                              isPerUnit ? 'pl-2.5 pr-10' : 'pl-6 pr-2.5'
+                            }`}
+                          />
+                          {isPerUnit && (
+                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[#746b61]">
+                              {matchedMaster?.unit || 'sqft'}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
-                    {/* Remove Button */}
-                    <div className="col-span-2 text-right">
+                    {/* 3. Calculated Line Total + Remove Button (3 cols on desktop) */}
+                    <div className="sm:col-span-3 flex items-center justify-end gap-2">
+                      <span className="text-xs font-bold text-[#171512] tabular-nums">
+                        {calculatedLineTotal > 0 ? `₹${calculatedLineTotal.toLocaleString()}` : '—'}
+                      </span>
                       <button
                         type="button"
                         onClick={() => handleRemoveComponentRow(idx)}
-                        className="text-xs font-semibold text-red-600 hover:text-red-800 px-2 py-1"
+                        title="Remove component"
+                        className="w-7 h-7 flex items-center justify-center rounded text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-800 transition"
                       >
                         ✕
                       </button>

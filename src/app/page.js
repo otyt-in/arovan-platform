@@ -195,11 +195,6 @@ export default function Home() {
     const mult = parseFloat(product.multiplier) || 0;
     const baseWoodCost = cft * mult;
 
-    // Legacy fixed fields fallback (if any older product used them)
-    const rattanMaster = addonsMaster.find(a => a.name.toLowerCase() === 'rattan');
-    const legacyRattanCost = (parseFloat(product.rattan_sqft) || 0) * (rattanMaster?.rate || 0);
-    const legacyCushionCost = parseFloat(product.cushion_qty) || 0;
-
     // Unified components list: Fabric + Cushion (Price x Count), Per-Unit (Qty x Rate), or Lump-Sum (₹)
     const miscList = Array.isArray(product.addons) ? product.addons : [];
     const addonsCost = miscList.reduce((sum, item) => {
@@ -221,8 +216,7 @@ export default function Home() {
 
     const packagingCost = parseFloat(product.packaging_cost) || 0;
 
-    const rawTotal =
-      baseWoodCost + legacyRattanCost + legacyCushionCost + addonsCost + packagingCost;
+    const rawTotal = baseWoodCost + addonsCost + packagingCost;
     return rawTotal > 0 ? Math.ceil(rawTotal / 1000) * 1000 : 0;
   };
 
@@ -268,6 +262,8 @@ export default function Home() {
   };
 
   const handleSaveProduct = async (calculatedSellPrice) => {
+    rattan_sqft: 0,
+    cushion_qty: 0,
     const cleanSku = formData.sku.trim().toUpperCase();
     if (!cleanSku || !formData.name.trim()) {
       alert('Please enter both a SKU and a Product Name before saving.');

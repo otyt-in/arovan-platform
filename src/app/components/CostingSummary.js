@@ -12,12 +12,7 @@ export default function CostingSummary({
   const multiplier = parseFloat(formData.multiplier) || 0;
   const baseWoodCost = woodCft * multiplier;
 
-  // 2. Legacy fixed fields fallback (in case an older product had rattanSqft or cushionQty saved)
-  const rattanMaster = addonsMaster.find(a => a.name.toLowerCase() === 'rattan');
-  const legacyRattanCost = (parseFloat(formData.rattanSqft) || 0) * (rattanMaster?.rate || 0);
-  const legacyCushionCost = parseFloat(formData.cushionQty) || 0;
-
-  // 3. Dynamic Components List (Rattan, Fabric + Cushion, Plywood, Brass, Metal, Hinges, Door Handles, etc.)
+  // 2. Unified Dynamic Components List (Single source of truth)
   const currentAddons = Array.isArray(formData.addons) ? formData.addons : [];
   const resolvedAddons = currentAddons
     .map(item => {
@@ -34,8 +29,14 @@ export default function CostingSummary({
         ? enteredVal * (master?.rate || 0)
         : enteredVal;
 
+      const label = isCushion
+        ? `${master?.name || 'Fabric + Cushion'} (${count} nos)`
+        : isPerUnit
+        ? `${master?.name || 'Component'} (${enteredVal} ${master?.unit || 'sqft'})`
+        : master?.name || 'Component';
+
       return {
-        name: master?.name || 'Component',
+        name: label,
         cost
       };
     })
@@ -43,12 +44,11 @@ export default function CostingSummary({
 
   const addonsTotal = resolvedAddons.reduce((sum, item) => sum + item.cost, 0);
 
-  // 4. Packaging Cost (Direct Lump Sum ₹)
+  // 3. Packaging Cost (Direct Lump Sum ₹)
   const packagingCost = parseFloat(formData.packagingCost) || 0;
 
-  // 5. Final Selling Price (Rounded up to nearest ₹1,000)
-  const rawTotal =
-    baseWoodCost + legacyRattanCost + legacyCushionCost + addonsTotal + packagingCost;
+  // 4. Final Selling Price (Rounded up to nearest ₹1,000)
+  const rawTotal = baseWoodCost + addonsTotal + packagingCost;
   const estimatedSellingPrice = rawTotal > 0 ? Math.ceil(rawTotal / 1000) * 1000 : 0;
 
   return (
@@ -83,24 +83,6 @@ export default function CostingSummary({
                   ₹{Math.round(baseWoodCost).toLocaleString()}
                 </span>
               </div>
-
-              {legacyRattanCost > 0 && (
-                <div className="flex justify-between items-center">
-                  <span className="text-[#5c5349] font-medium">Rattan</span>
-                  <span className="font-bold text-[#171512]">
-                    ₹{Math.round(legacyRattanCost).toLocaleString()}
-                  </span>
-                </div>
-              )}
-
-              {legacyCushionCost > 0 && (
-                <div className="flex justify-between items-center">
-                  <span className="text-[#5c5349] font-medium">Fabric + Cushion</span>
-                  <span className="font-bold text-[#171512]">
-                    ₹{Math.round(legacyCushionCost).toLocaleString()}
-                  </span>
-                </div>
-              )}
 
               {resolvedAddons.map((item, idx) => (
                 <div key={idx} className="flex justify-between items-center">
