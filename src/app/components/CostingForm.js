@@ -25,7 +25,7 @@ export default function CostingForm({
   onTrackUpload
 }) {
   const [uploading, setUploading] = useState(false);
-  const [dimUnit, setDimUnit] = useState('in'); // 'in' or 'ft'
+  const [dimUnit, setDimUnit] = useState('ft'); // 'in' or 'ft'
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
