@@ -24,7 +24,7 @@ const CATEGORY_PREFIXES = {
 const ADMIN_EMAILS = ['arovan011@gmail.com'];
 const FREELANCER_EMAILS = ['freelancer@arovan.com'];
 
-// Helper: Convert whole inches into compact Ft + In string (e.g., 72 -> 6'0" or 66 -> 5'6")
+// Helper: Convert whole inches into compact Ft + In string (e.g., 72 -> 6'L or 66 -> 5'6"L)
 const toFtInLabel = (val, axis) => {
   const totalIn = Math.round(Number(val) || 0);
   if (!totalIn) return null;
@@ -32,6 +32,12 @@ const toFtInLabel = (val, axis) => {
   const inc = totalIn % 12;
   const ftInStr = ft > 0 ? (inc > 0 ? `${ft}'${inc}"` : `${ft}'`) : `${inc}"`;
   return `${ftInStr}${axis}`;
+};
+
+// Helper: Extract storage file name from a Supabase public URL
+const extractStorageFileName = (url) => {
+  if (!url || !url.includes('/product-images/')) return null;
+  return url.split('/product-images/')[1] || null;
 };
 
 export default function Home() {
@@ -50,6 +56,10 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [openCategories, setOpenCategories] = useState({});
   const [editingSku, setEditingSku] = useState(null);
+
+  // Track temporary session image uploads & original product image during edits
+  const [pendingUploads, setPendingUploads] = useState([]);
+  const [originalEditImage, setOriginalEditImage] = useState('');
 
   // Admin Presentation Toggle ("Client View") & Per-Product Reveal Map
   const [clientViewMode, setClientViewMode] = useState(false);
@@ -156,6 +166,29 @@ export default function Home() {
     }
   };
 
+  // --- SAFE STORAGE CLEANUP HELPER ---
+  // Only deletes an image file if no other saved product in productLibrary uses it
+  const removeUnusedStorageImages = async (urlsToRemove, activeSkuToIgnore = null) => {
+    const filesToDelete = urlsToRemove
+      .filter(Boolean)
+      .filter(url => {
+        const usedElsewhere = productLibrary.some(
+          p => p.sku !== activeSkuToIgnore && p.image_base64 === url
+        );
+        return !usedElsewhere;
+      })
+      .map(extractStorageFileName)
+      .filter(Boolean);
+
+    if (filesToDelete.length > 0) {
+      await supabase.storage.from('product-images').remove(filesToDelete);
+    }
+  };
+
+  const handleTrackUpload = (newUrl) => {
+    setPendingUploads(prev => [...prev, newUrl]);
+  };
+
   // --- LIVE DYNAMIC ERP PRICE CALCULATOR ---
   const calculateDynamicPrice = (product) => {
     const cft = parseFloat(product.wood_cft) || 0;
@@ -191,8 +224,15 @@ export default function Home() {
     }
   };
 
-  const handleResetForm = () => {
+  const handleResetForm = async () => {
+    // Clean up any unsaved temporary uploads made during this form session
+    if (pendingUploads.length > 0) {
+      await removeUnusedStorageImages(pendingUploads);
+      setPendingUploads([]);
+    }
+    setOriginalEditImage('');
     setEditingSku(null);
+
     const defaultCat = 'Dining Tables';
     setFormData({
       category: defaultCat,
@@ -249,15 +289,29 @@ export default function Home() {
     };
 
     try {
+      // 1. Upsert the new/updated SKU row FIRST so data is safely stored
+      const { error } = await supabase.from('product_master').upsert(payload);
+      if (error) throw error;
+
+      // 2. If user renamed the SKU during edit, delete the old SKU row AFTER upsert succeeds
       if (editingSku && editingSku !== cleanSku) {
         await supabase.from('product_master').delete().eq('sku', editingSku);
       }
 
-      const { error } = await supabase.from('product_master').upsert(payload);
-      if (error) throw error;
+      // 3. Clean up any intermediate uploads or replaced image from storage bucket
+      const discardedUploads = pendingUploads.filter(url => url !== formData.image_base64);
+      if (originalEditImage && originalEditImage !== formData.image_base64) {
+        discardedUploads.push(originalEditImage);
+      }
+      if (discardedUploads.length > 0) {
+        await removeUnusedStorageImages(discardedUploads, cleanSku);
+      }
+
+      setPendingUploads([]);
+      setOriginalEditImage(formData.image_base64 || '');
+      setEditingSku(cleanSku);
 
       alert(`Product ${cleanSku} saved successfully!`);
-      setEditingSku(cleanSku);
       await fetchAllMasterData();
     } catch (err) {
       console.error('Save error:', err);
@@ -266,8 +320,13 @@ export default function Home() {
   };
 
   // --- LIBRARY CARD ACTIONS ---
-  const handleEditProduct = (product) => {
+  const handleEditProduct = async (product) => {
+    if (pendingUploads.length > 0) {
+      await removeUnusedStorageImages(pendingUploads);
+      setPendingUploads([]);
+    }
     setEditingSku(product.sku);
+    setOriginalEditImage(product.image_base64 || '');
     setFormData({
       category: product.category || 'Dining Tables',
       sku: product.sku,
@@ -290,9 +349,14 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleDuplicateProduct = (product) => {
+  const handleDuplicateProduct = async (product) => {
+    if (pendingUploads.length > 0) {
+      await removeUnusedStorageImages(pendingUploads);
+      setPendingUploads([]);
+    }
     const newSku = generateSmartSku(product.category);
     setEditingSku(null);
+    setOriginalEditImage('');
     setFormData({
       category: product.category || 'Dining Tables',
       sku: newSku,
@@ -319,17 +383,16 @@ export default function Home() {
     if (!confirm(`Are you sure you want to permanently delete ${sku}?`)) return;
 
     try {
-      if (imageUrl && imageUrl.includes('/product-images/')) {
-        const fileName = imageUrl.split('/product-images/')[1];
-        if (fileName) {
-          await supabase.storage.from('product-images').remove([fileName]);
-        }
-      }
-
       const { error } = await supabase.from('product_master').delete().eq('sku', sku);
       if (error) throw error;
 
-      if (editingSku === sku) handleResetForm();
+      if (imageUrl) {
+        await removeUnusedStorageImages([imageUrl], sku);
+      }
+
+      if (editingSku === sku) {
+        await handleResetForm();
+      }
       await fetchAllMasterData();
     } catch (err) {
       console.error('Delete error:', err);
@@ -544,6 +607,7 @@ export default function Home() {
                   woodMaster={woodMaster}
                   addonsMaster={addonsMaster}
                   onCategoryChange={handleCategoryChange}
+                  onTrackUpload={handleTrackUpload}
                 />
               </div>
 
@@ -655,12 +719,14 @@ export default function Home() {
                                 className="border border-[#e1d8cd] rounded-lg overflow-hidden bg-white flex flex-col justify-between hover:shadow-md transition"
                               >
                                 <div>
-                                  {/* Full-Fit Product Image Box */}
+                                  {/* Full-Fit Product Image Box with Lazy Loading */}
                                   <div className="h-56 sm:h-60 w-full bg-[#faf8f5] border-b border-[#e1d8cd] p-3 flex items-center justify-center overflow-hidden">
                                     {item.image_base64 ? (
                                       <img
                                         src={item.image_base64}
                                         alt={item.name}
+                                        loading="lazy"
+                                        decoding="async"
                                         className="max-h-full max-w-full w-auto h-auto object-contain"
                                       />
                                     ) : (

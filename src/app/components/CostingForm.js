@@ -21,7 +21,8 @@ export default function CostingForm({
   setFormData,
   woodMaster,
   addonsMaster,
-  onCategoryChange
+  onCategoryChange,
+  onTrackUpload
 }) {
   const [uploading, setUploading] = useState(false);
   const [dimUnit, setDimUnit] = useState('in'); // 'in' or 'ft'
@@ -103,7 +104,7 @@ export default function CostingForm({
     handleChange('addons', updated);
   };
 
-  // --- IMAGE COMPRESSOR & CLOUD UPLOAD ---
+  // --- IMAGE COMPRESSOR & SAFE CLOUD UPLOAD ---
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -164,14 +165,14 @@ export default function CostingForm({
         .from('product-images')
         .getPublicUrl(fileName);
 
-      if (formData.image_base64 && formData.image_base64.includes('/product-images/')) {
-        const oldFileName = formData.image_base64.split('/product-images/')[1];
-        if (oldFileName) {
-          await supabase.storage.from('product-images').remove([oldFileName]);
-        }
+      const newUrl = publicUrlData.publicUrl;
+
+      // Track this upload in parent so unlinked uploads can be cleaned up on Save or Reset
+      if (onTrackUpload) {
+        onTrackUpload(newUrl);
       }
 
-      handleChange('image_base64', publicUrlData.publicUrl);
+      handleChange('image_base64', newUrl);
     } catch (err) {
       console.error('Upload error:', err);
       alert('Failed to upload image: ' + err.message);
