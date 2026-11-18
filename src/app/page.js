@@ -195,24 +195,34 @@ export default function Home() {
     const mult = parseFloat(product.multiplier) || 0;
     const baseWoodCost = cft * mult;
 
+    // Legacy fixed fields fallback (if any older product used them)
     const rattanMaster = addonsMaster.find(a => a.name.toLowerCase() === 'rattan');
-    const rattanCost = (parseFloat(product.rattan_sqft) || 0) * (rattanMaster?.rate || 0);
+    const legacyRattanCost = (parseFloat(product.rattan_sqft) || 0) * (rattanMaster?.rate || 0);
+    const legacyCushionCost = parseFloat(product.cushion_qty) || 0;
 
-    // Fabric + Cushion is stored as a direct lump-sum ₹
-    const cushionCost = parseFloat(product.cushion_qty) || 0;
-
-    // Misc add-ons: multiply if per_unit (e.g. Plywood), otherwise add lump-sum ₹ directly
+    // Unified components list: Fabric + Cushion (Price x Count), Per-Unit (Qty x Rate), or Lump-Sum (₹)
     const miscList = Array.isArray(product.addons) ? product.addons : [];
-    const miscCost = miscList.reduce((sum, item) => {
+    const addonsCost = miscList.reduce((sum, item) => {
       const master = addonsMaster.find(a => a.id === item.addon_id);
+      const isCushion = master?.name?.toLowerCase().includes('cushion');
+      const isPerUnit = master?.pricing_type === 'per_unit' && !isCushion;
+
       const enteredVal = parseFloat(item.qty) || 0;
-      const isPerUnit = master?.pricing_type === 'per_unit';
-      return sum + (isPerUnit ? enteredVal * (master?.rate || 0) : enteredVal);
+      const count = parseFloat(item.count ?? 1) || 0;
+
+      const itemCost = isCushion
+        ? enteredVal * count
+        : isPerUnit
+        ? enteredVal * (master?.rate || 0)
+        : enteredVal;
+
+      return sum + itemCost;
     }, 0);
 
     const packagingCost = parseFloat(product.packaging_cost) || 0;
 
-    const rawTotal = baseWoodCost + rattanCost + cushionCost + miscCost + packagingCost;
+    const rawTotal =
+      baseWoodCost + legacyRattanCost + legacyCushionCost + addonsCost + packagingCost;
     return rawTotal > 0 ? Math.ceil(rawTotal / 1000) * 1000 : 0;
   };
 

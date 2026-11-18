@@ -73,33 +73,54 @@ export default function CostingForm({
   };
 
   const selectedWood = woodMaster.find(w => String(w.id) === String(formData.woodTypeId));
-  const rattanMaster = addonsMaster.find(a => a.name.toLowerCase() === 'rattan');
-  const cushionMaster = addonsMaster.find(a => a.name.toLowerCase().includes('cushion'));
-  const miscAddonsList = addonsMaster.filter(a => !a.is_fixed_grid);
 
-  // --- DYNAMIC MISC ADD-ONS HANDLERS ---
+  // --- DYNAMIC ADD-ONS HANDLERS (ALL COMPONENTS IN ONE LIST) ---
   const currentAddons = Array.isArray(formData.addons) ? formData.addons : [];
 
-  const handleAddMiscRow = () => {
-    if (miscAddonsList.length === 0) {
-      alert('No extra components configured in Settings yet.');
+  const handleAddComponentRow = () => {
+    if (addonsMaster.length === 0) {
+      alert('No components configured in Settings yet.');
       return;
     }
-    const defaultItem = miscAddonsList[0];
-    const updated = [...currentAddons, { addon_id: defaultItem.id, qty: '' }];
+    const defaultItem = addonsMaster[0];
+    const isCushion = defaultItem.name.toLowerCase().includes('cushion');
+    const updated = [
+      ...currentAddons,
+      {
+        addon_id: defaultItem.id,
+        qty: '',
+        count: isCushion ? 1 : 1
+      }
+    ];
     handleChange('addons', updated);
   };
 
-  const handleMiscRowChange = (index, field, value) => {
+  const handleComponentRowChange = (index, field, value) => {
     const updated = [...currentAddons];
-    updated[index] = {
-      ...updated[index],
-      [field]: field === 'addon_id' ? parseInt(value, 10) : (parseFloat(value) || 0)
-    };
+    if (field === 'addon_id') {
+      const newId = parseInt(value, 10);
+      const matched = addonsMaster.find(a => a.id === newId);
+      const isCushion = matched?.name?.toLowerCase().includes('cushion');
+      updated[index] = {
+        addon_id: newId,
+        qty: '',
+        count: isCushion ? 1 : 1
+      };
+    } else if (field === 'count') {
+      updated[index] = {
+        ...updated[index],
+        count: value === '' ? '' : Math.max(1, Math.round(Number(value) || 1))
+      };
+    } else {
+      updated[index] = {
+        ...updated[index],
+        [field]: value === '' ? '' : (parseFloat(value) || 0)
+      };
+    }
     handleChange('addons', updated);
   };
 
-  const handleRemoveMiscRow = (index) => {
+  const handleRemoveComponentRow = (index) => {
     const updated = currentAddons.filter((_, i) => i !== index);
     handleChange('addons', updated);
   };
@@ -421,7 +442,7 @@ export default function CostingForm({
         )}
       </div>
 
-      {/* SECTION 3: SIMPLIFIED WOOD MULTIPLIER & ADD-ONS */}
+      {/* SECTION 3: WOOD, MULTIPLIER, PACKAGING & MODULAR ADD-ONS */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
         <div className="flex items-center gap-2.5 mb-5">
           <span className="w-5 h-5 rounded-full bg-[#171512] text-white text-[11px] font-bold flex items-center justify-center">
@@ -432,14 +453,14 @@ export default function CostingForm({
           </h2>
         </div>
 
-        {/* PRIMARY WOOD & MULTIPLIER */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pb-5 border-b border-[#f0eae1]">
+        {/* PRIMARY WOOD, MULTIPLIER & PACKAGING */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-5 border-b border-[#f0eae1]">
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-[11px] font-bold text-[#4a433b]">Type of Wood</label>
               {selectedWood && (
                 <span className="text-[10px] font-medium text-[#746b61]">
-                  Ref: ₹{(selectedWood.rate_per_cft || 0).toLocaleString()}/CFT
+                  Ref: ₹{(selectedWood.rate_per_cft || 0).toLocaleString()}
                 </span>
               )}
             </div>
@@ -480,51 +501,6 @@ export default function CostingForm({
               className="w-full p-2.5 text-sm font-semibold border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
             />
           </div>
-        </div>
-
-        {/* FIXED COMMON GRID: RATTAN (PER SQFT), FABRIC + CUSHION (LUMP SUM ₹), PACKAGING (LUMP SUM ₹) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 py-5 border-b border-[#f0eae1]">
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11px] font-bold text-[#4a433b]">
-                Rattan ({rattanMaster?.unit || 'sqft'})
-              </label>
-              {rattanMaster && (
-                <span className="text-[10px] text-[#746b61]">
-                  ₹{rattanMaster.rate?.toLocaleString()}/{rattanMaster.unit || 'sqft'}
-                </span>
-              )}
-            </div>
-            <input
-              type="number"
-              step="0.1"
-              value={formData.rattanSqft}
-              onChange={(e) => handleChange('rattanSqft', e.target.value)}
-              placeholder="0"
-              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11px] font-bold text-[#4a433b]">
-                Fabric + Cushion (₹)
-              </label>
-              {cushionMaster && cushionMaster.rate > 0 && (
-                <span className="text-[10px] text-[#746b61]">
-                  Ref: ₹{cushionMaster.rate?.toLocaleString()}/{cushionMaster.unit || 'mtr'}
-                </span>
-              )}
-            </div>
-            <input
-              type="number"
-              step="1"
-              value={formData.cushionQty}
-              onChange={(e) => handleChange('cushionQty', e.target.value)}
-              placeholder="Lump sum ₹"
-              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
-            />
-          </div>
 
           <div>
             <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
@@ -540,7 +516,7 @@ export default function CostingForm({
           </div>
         </div>
 
-        {/* DYNAMIC MISC ADD-ONS (PLYWOOD PER SQFT + MANUAL LUMP-SUM HARDWARE/MISC) */}
+        {/* DYNAMIC ADDITIONAL COMPONENTS (RATTAN, FABRIC + CUSHION, PLYWOOD, BRASS, METAL, HINGES, HANDLES) */}
         <div className="pt-5">
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -548,12 +524,12 @@ export default function CostingForm({
                 Additional Components (Optional)
               </h3>
               <p className="text-[10px] text-[#746b61]">
-                Plywood calculates by sqft; Hardware &amp; misc items take a manual lump-sum ₹ per product.
+                Add Rattan, Fabric + Cushion (Price × No. of), Plywood (sqft), Brass, Metal, Hinges, Door Handles, etc.
               </p>
             </div>
             <button
               type="button"
-              onClick={handleAddMiscRow}
+              onClick={handleAddComponentRow}
               className="px-3 py-1.5 bg-[#f4f1eb] hover:bg-[#e8e1d7] text-[#171512] text-[11px] font-bold uppercase tracking-wider rounded transition"
             >
               + Add Component
@@ -563,10 +539,17 @@ export default function CostingForm({
           {currentAddons.length > 0 && (
             <div className="space-y-2.5 mt-3">
               {currentAddons.map((row, idx) => {
-                const matchedMaster = miscAddonsList.find(a => a.id === row.addon_id);
-                const isPerUnit = matchedMaster?.pricing_type === 'per_unit';
-                const calculatedLineTotal = isPerUnit
-                  ? Math.round((parseFloat(row.qty) || 0) * (matchedMaster?.rate || 0))
+                const matchedMaster = addonsMaster.find(a => a.id === row.addon_id);
+                const isCushion = matchedMaster?.name?.toLowerCase().includes('cushion');
+                const isPerUnit = matchedMaster?.pricing_type === 'per_unit' && !isCushion;
+
+                const enteredVal = parseFloat(row.qty) || 0;
+                const cushionCount = parseFloat(row.count ?? 1) || 0;
+
+                const calculatedLineTotal = isCushion
+                  ? Math.round(enteredVal * cushionCount)
+                  : isPerUnit
+                  ? Math.round(enteredVal * (matchedMaster?.rate || 0))
                   : 0;
 
                 return (
@@ -574,15 +557,17 @@ export default function CostingForm({
                     key={idx}
                     className="grid grid-cols-12 gap-2.5 items-center bg-[#faf8f5] p-2.5 rounded-md border border-[#e8e1d7]"
                   >
-                    <div className="col-span-6 sm:col-span-7">
+                    {/* Component Selector */}
+                    <div className={isCushion ? 'col-span-12 sm:col-span-5' : 'col-span-6 sm:col-span-7'}>
                       <select
                         value={row.addon_id}
-                        onChange={(e) => handleMiscRowChange(idx, 'addon_id', e.target.value)}
+                        onChange={(e) => handleComponentRowChange(idx, 'addon_id', e.target.value)}
                         className="w-full p-2 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
                       >
-                        {miscAddonsList.map(opt => {
+                        {addonsMaster.map(opt => {
+                          const optIsCushion = opt.name.toLowerCase().includes('cushion');
                           const optLabel =
-                            opt.pricing_type === 'per_unit'
+                            opt.pricing_type === 'per_unit' && !optIsCushion
                               ? `${opt.name} (₹${opt.rate?.toLocaleString()}/${opt.unit})`
                               : opt.rate > 0
                               ? `${opt.name} (Ref: ₹${opt.rate?.toLocaleString()})`
@@ -596,13 +581,46 @@ export default function CostingForm({
                       </select>
                     </div>
 
-                    <div className="col-span-4 sm:col-span-3">
-                      <div className="relative">
+                    {/* Input Fields: 2 boxes for Fabric + Cushion (Price ₹ x No. of), 1 box for everything else */}
+                    {isCushion ? (
+                      <div className="col-span-10 sm:col-span-5">
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="number"
+                            step="1"
+                            value={row.qty}
+                            onChange={(e) => handleComponentRowChange(idx, 'qty', e.target.value)}
+                            placeholder="Price ₹/ea"
+                            className="w-full p-2 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
+                          />
+                          <div className="relative">
+                            <input
+                              type="number"
+                              step="1"
+                              min="1"
+                              value={row.count ?? 1}
+                              onChange={(e) => handleComponentRowChange(idx, 'count', e.target.value)}
+                              placeholder="No. of"
+                              className="w-full p-2 pr-8 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[#746b61]">
+                              nos
+                            </span>
+                          </div>
+                        </div>
+                        {calculatedLineTotal > 0 && (
+                          <p className="text-[10px] font-semibold text-[#5c5349] mt-0.5 text-right">
+                            Total = ₹{calculatedLineTotal.toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="col-span-4 sm:col-span-3">
                         <input
                           type="number"
                           step={isPerUnit ? '0.1' : '1'}
                           value={row.qty}
-                          onChange={(e) => handleMiscRowChange(idx, 'qty', e.target.value)}
+                          onChange={(e) => handleComponentRowChange(idx, 'qty', e.target.value)}
                           placeholder={isPerUnit ? `${matchedMaster?.unit || 'sqft'}` : 'Lump sum ₹'}
                           className="w-full p-2 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
                         />
@@ -612,12 +630,13 @@ export default function CostingForm({
                           </p>
                         )}
                       </div>
-                    </div>
+                    )}
 
+                    {/* Remove Button */}
                     <div className="col-span-2 text-right">
                       <button
                         type="button"
-                        onClick={() => handleRemoveMiscRow(idx)}
+                        onClick={() => handleRemoveComponentRow(idx)}
                         className="text-xs font-semibold text-red-600 hover:text-red-800 px-2 py-1"
                       >
                         ✕

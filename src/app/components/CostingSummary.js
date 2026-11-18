@@ -12,22 +12,27 @@ export default function CostingSummary({
   const multiplier = parseFloat(formData.multiplier) || 0;
   const baseWoodCost = woodCft * multiplier;
 
-  // 2. Rattan (Per Sqft * Rate from Settings)
+  // 2. Legacy fixed fields fallback (in case an older product had rattanSqft or cushionQty saved)
   const rattanMaster = addonsMaster.find(a => a.name.toLowerCase() === 'rattan');
-  const rattanQty = parseFloat(formData.rattanSqft) || 0;
-  const rattanCost = rattanQty * (rattanMaster?.rate || 0);
+  const legacyRattanCost = (parseFloat(formData.rattanSqft) || 0) * (rattanMaster?.rate || 0);
+  const legacyCushionCost = parseFloat(formData.cushionQty) || 0;
 
-  // 3. Fabric + Cushion (Direct Lump Sum ₹ entered on form)
-  const cushionCost = parseFloat(formData.cushionQty) || 0;
-
-  // 4. Dynamic Misc Add-ons (Per-Unit items multiply by rate; Lump-Sum items use entered ₹ directly)
+  // 3. Dynamic Components List (Rattan, Fabric + Cushion, Plywood, Brass, Metal, Hinges, Door Handles, etc.)
   const currentAddons = Array.isArray(formData.addons) ? formData.addons : [];
-  const resolvedMiscAddons = currentAddons
+  const resolvedAddons = currentAddons
     .map(item => {
       const master = addonsMaster.find(a => a.id === item.addon_id);
+      const isCushion = master?.name?.toLowerCase().includes('cushion');
+      const isPerUnit = master?.pricing_type === 'per_unit' && !isCushion;
+
       const enteredVal = parseFloat(item.qty) || 0;
-      const isPerUnit = master?.pricing_type === 'per_unit';
-      const cost = isPerUnit ? enteredVal * (master?.rate || 0) : enteredVal;
+      const count = parseFloat(item.count ?? 1) || 0;
+
+      const cost = isCushion
+        ? enteredVal * count
+        : isPerUnit
+        ? enteredVal * (master?.rate || 0)
+        : enteredVal;
 
       return {
         name: master?.name || 'Component',
@@ -36,13 +41,14 @@ export default function CostingSummary({
     })
     .filter(item => item.cost > 0);
 
-  const miscAddonsTotal = resolvedMiscAddons.reduce((sum, item) => sum + item.cost, 0);
+  const addonsTotal = resolvedAddons.reduce((sum, item) => sum + item.cost, 0);
 
-  // 5. Packaging Cost (Direct Lump Sum ₹)
+  // 4. Packaging Cost (Direct Lump Sum ₹)
   const packagingCost = parseFloat(formData.packagingCost) || 0;
 
-  // 6. Final Selling Price (Rounded up to nearest ₹1,000)
-  const rawTotal = baseWoodCost + rattanCost + cushionCost + miscAddonsTotal + packagingCost;
+  // 5. Final Selling Price (Rounded up to nearest ₹1,000)
+  const rawTotal =
+    baseWoodCost + legacyRattanCost + legacyCushionCost + addonsTotal + packagingCost;
   const estimatedSellingPrice = rawTotal > 0 ? Math.ceil(rawTotal / 1000) * 1000 : 0;
 
   return (
@@ -78,25 +84,25 @@ export default function CostingSummary({
                 </span>
               </div>
 
-              {rattanCost > 0 && (
+              {legacyRattanCost > 0 && (
                 <div className="flex justify-between items-center">
                   <span className="text-[#5c5349] font-medium">Rattan</span>
                   <span className="font-bold text-[#171512]">
-                    ₹{Math.round(rattanCost).toLocaleString()}
+                    ₹{Math.round(legacyRattanCost).toLocaleString()}
                   </span>
                 </div>
               )}
 
-              {cushionCost > 0 && (
+              {legacyCushionCost > 0 && (
                 <div className="flex justify-between items-center">
                   <span className="text-[#5c5349] font-medium">Fabric + Cushion</span>
                   <span className="font-bold text-[#171512]">
-                    ₹{Math.round(cushionCost).toLocaleString()}
+                    ₹{Math.round(legacyCushionCost).toLocaleString()}
                   </span>
                 </div>
               )}
 
-              {resolvedMiscAddons.map((item, idx) => (
+              {resolvedAddons.map((item, idx) => (
                 <div key={idx} className="flex justify-between items-center">
                   <span className="text-[#5c5349] font-medium">{item.name}</span>
                   <span className="font-bold text-[#171512]">
