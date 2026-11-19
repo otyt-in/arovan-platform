@@ -21,15 +21,38 @@ export default function CostingForm({
   setFormData,
   woodMaster,
   addonsMaster,
+  categoryWoodRules,
   onCategoryChange,
   onTrackUpload
 }) {
   const [uploading, setUploading] = useState(false);
   const [dimUnit, setDimUnit] = useState('ft'); // Default to Ft + In (' ")
 
-  const handleChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const findRuleMultiplier = (cat, woodId) => {
+    if (!Array.isArray(categoryWoodRules)) return null;
+    const match = categoryWoodRules.find(
+      r => r.category === cat && String(r.wood_type_id) === String(woodId)
+    );
+    return match ? String(match.multiplier) : null;
   };
+
+  const handleChange = (field, value) => {
+    setFormData(prev => {
+      const next = { ...prev, [field]: value };
+      // When wood type changes, auto-fill matching Category x Wood rule (or clear to blank if unconfigured)
+      if (field === 'woodTypeId') {
+        const ruleMult = findRuleMultiplier(prev.category, value);
+        next.multiplier = ruleMult !== null ? ruleMult : '';
+      }
+      return next;
+    });
+  };
+
+  const activeRuleMult = findRuleMultiplier(formData.category, formData.woodTypeId);
+  const isCustomOverride =
+    activeRuleMult !== null &&
+    String(formData.multiplier).trim() !== '' &&
+    parseFloat(formData.multiplier) !== parseFloat(activeRuleMult);
 
   // --- WHOLE-INTEGER DIMENSION CONVERSION HELPERS ---
   const handleInchInput = (field, rawVal) => {
@@ -72,9 +95,12 @@ export default function CostingForm({
     return `${ft}' ${inc}"`;
   };
 
-  const selectedWood = woodMaster.find(w => String(w.id) === String(formData.woodTypeId));
+  // Top surface area in sq ft from stored whole inches (L x W / 144)
+  const lenIn = Math.round(Number(formData.dimLength) || 0);
+  const widIn = Math.round(Number(formData.dimWidth) || 0);
+  const topAreaSqFt = lenIn > 0 && widIn > 0 ? (lenIn * widIn) / 144 : 0;
 
-  // --- DYNAMIC ADD-ONS HANDLERS (ALL COMPONENTS IN ONE LIST) ---
+  // --- DYNAMIC ADD-ONS HANDLERS ---
   const currentAddons = Array.isArray(formData.addons) ? formData.addons : [];
 
   const handleAddComponentRow = () => {
@@ -220,7 +246,12 @@ export default function CostingForm({
               value={formData.category}
               onChange={(e) => {
                 const newCat = e.target.value;
-                handleChange('category', newCat);
+                const ruleMult = findRuleMultiplier(newCat, formData.woodTypeId);
+                setFormData(prev => ({
+                  ...prev,
+                  category: newCat,
+                  multiplier: ruleMult !== null ? ruleMult : ''
+                }));
                 if (onCategoryChange) onCategoryChange(newCat);
               }}
               className="w-full p-2.5 text-sm bg-white border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
@@ -321,7 +352,7 @@ export default function CostingForm({
         </div>
       </div>
 
-      {/* SECTION 2: REFERENCE DIMENSIONS (DEFAULT FT + IN TOGGLE) */}
+      {/* SECTION 2: REFERENCE DIMENSIONS (DEFAULT FT + IN TOGGLE + TOP AREA SQ FT) */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-5">
           <div className="flex items-center gap-2.5">
@@ -333,29 +364,37 @@ export default function CostingForm({
             </h2>
           </div>
 
-          <div className="inline-flex rounded-md border border-[#dcd3c9] bg-[#faf8f5] p-0.5">
-            <button
-              type="button"
-              onClick={() => setDimUnit('ft')}
-              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ${
-                dimUnit === 'ft'
-                  ? 'bg-[#171512] text-white'
-                  : 'text-[#746b61] hover:text-[#171512]'
-              }`}
-            >
-              Ft + In (&apos; &quot;)
-            </button>
-            <button
-              type="button"
-              onClick={() => setDimUnit('in')}
-              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ${
-                dimUnit === 'in'
-                  ? 'bg-[#171512] text-white'
-                  : 'text-[#746b61] hover:text-[#171512]'
-              }`}
-            >
-              Inches (&quot;)
-            </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {topAreaSqFt > 0 && (
+              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-[#f4f1eb] border border-[#e1d8cd] text-[#4a433b] tabular-nums">
+                Top Area: <strong className="text-[#171512]">{topAreaSqFt.toFixed(1)} sq ft</strong>
+              </span>
+            )}
+
+            <div className="inline-flex rounded-md border border-[#dcd3c9] bg-[#faf8f5] p-0.5">
+              <button
+                type="button"
+                onClick={() => setDimUnit('ft')}
+                className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ${
+                  dimUnit === 'ft'
+                    ? 'bg-[#171512] text-white'
+                    : 'text-[#746b61] hover:text-[#171512]'
+                }`}
+              >
+                Ft + In (&apos; &quot;)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDimUnit('in')}
+                className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ${
+                  dimUnit === 'in'
+                    ? 'bg-[#171512] text-white'
+                    : 'text-[#746b61] hover:text-[#171512]'
+                }`}
+              >
+                Inches (&quot;)
+              </button>
+            </div>
           </div>
         </div>
 
@@ -453,14 +492,9 @@ export default function CostingForm({
         {/* PRIMARY WOOD, MULTIPLIER & PACKAGING */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-5 border-b border-[#f0eae1]">
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11px] font-bold text-[#4a433b]">Type of Wood</label>
-              {selectedWood && (
-                <span className="text-[10px] font-medium text-[#746b61]">
-                  Ref: ₹{(selectedWood.rate_per_cft || 0).toLocaleString()}
-                </span>
-              )}
-            </div>
+            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
+              Type of Wood
+            </label>
             <select
               value={formData.woodTypeId}
               onChange={(e) => handleChange('woodTypeId', e.target.value)}
@@ -487,14 +521,40 @@ export default function CostingForm({
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
-              Multiplier (₹ / CFT)
-            </label>
+            <div className="flex items-center justify-between gap-1 mb-1.5">
+              <label className="text-[11px] font-bold text-[#4a433b]">
+                Multiplier (₹)
+              </label>
+              {activeRuleMult !== null ? (
+                isCustomOverride ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData(prev => ({ ...prev, multiplier: activeRuleMult }))
+                    }
+                    className="text-[10px] font-semibold text-amber-700 underline hover:text-[#171512]"
+                    title="Reset back to Category × Wood rule"
+                  >
+                    Custom (Reset)
+                  </button>
+                ) : (
+                  <span className="text-[10px] font-semibold text-emerald-700">
+                    Rule: ₹{Number(activeRuleMult).toLocaleString()}
+                  </span>
+                )
+              ) : (
+                <span className="text-[10px] font-medium text-[#746b61]">
+                  Manual entry
+                </span>
+              )}
+            </div>
             <input
               type="number"
               value={formData.multiplier}
-              onChange={(e) => handleChange('multiplier', e.target.value)}
-              placeholder="e.g. 14000"
+              onChange={(e) =>
+                setFormData(prev => ({ ...prev, multiplier: e.target.value }))
+              }
+              placeholder={activeRuleMult ? activeRuleMult : 'Manual ₹/CFT'}
               className="w-full p-2.5 text-sm font-semibold border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
             />
           </div>

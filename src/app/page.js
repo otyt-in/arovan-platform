@@ -48,6 +48,7 @@ export default function Home() {
   const [activeView, setActiveView] = useState('workspace');
   const [woodMaster, setWoodMaster] = useState([]);
   const [addonsMaster, setAddonsMaster] = useState([]);
+  const [categoryWoodRules, setCategoryWoodRules] = useState([]);
   const [productLibrary, setProductLibrary] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState('');
@@ -80,7 +81,9 @@ export default function Home() {
     woodCft: '',
     multiplier: '',
     packagingCost: '',
-    addons: []
+    addons: [],
+    lastConfiguredPrice: 0,
+    priceHistory: []
   });
 
   // Determine User Role
@@ -132,31 +135,50 @@ export default function Home() {
     return `${prefix}-${String(nextNum).padStart(3, '0')}`;
   };
 
+  const lookupRuleMultiplier = (cat, woodId, rulesList = categoryWoodRules) => {
+    const match = (rulesList || []).find(
+      r => r.category === cat && String(r.wood_type_id) === String(woodId)
+    );
+    return match ? String(match.multiplier) : '';
+  };
+
   const fetchAllMasterData = async () => {
     setDataLoading(true);
     try {
-      const [woodsRes, addonsRes, productsRes] = await Promise.all([
+      const [woodsRes, addonsRes, rulesRes, productsRes] = await Promise.all([
         supabase.from('wood_master').select('*').order('name'),
         supabase.from('addons_master').select('*').order('id'),
+        supabase.from('category_wood_rules').select('*').order('category'),
         supabase.from('product_master').select('*').order('modified_at', { ascending: false })
       ]);
 
       const woods = woodsRes.data || [];
       const addons = addonsRes.data || [];
+      const rules = rulesRes.data || [];
       const products = productsRes.data || [];
 
       setWoodMaster(woods);
       setAddonsMaster(addons);
+      setCategoryWoodRules(rules);
       setProductLibrary(products);
       setLastSyncTime(
         new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       );
 
-      setFormData(prev => ({
-        ...prev,
-        woodTypeId: prev.woodTypeId || woods[0]?.id || '',
-        sku: prev.sku || generateSmartSku(prev.category, products)
-      }));
+      setFormData(prev => {
+        const defaultWoodId = prev.woodTypeId || woods[0]?.id || '';
+        const defaultMult =
+          prev.multiplier !== ''
+            ? prev.multiplier
+            : lookupRuleMultiplier(prev.category, defaultWoodId, rules);
+
+        return {
+          ...prev,
+          woodTypeId: defaultWoodId,
+          multiplier: defaultMult,
+          sku: prev.sku || generateSmartSku(prev.category, products)
+        };
+      });
     } catch (err) {
       console.error('Error fetching master data:', err);
     } finally {
@@ -240,6 +262,7 @@ export default function Home() {
     setEditingSku(null);
 
     const defaultCat = 'Dining Tables';
+    const defaultWood = woodMaster[0]?.id || '';
     setFormData({
       category: defaultCat,
       sku: generateSmartSku(defaultCat),
@@ -250,11 +273,13 @@ export default function Home() {
       dimLength: '',
       dimWidth: '',
       dimHeight: '',
-      woodTypeId: woodMaster[0]?.id || '',
+      woodTypeId: defaultWood,
       woodCft: '',
-      multiplier: '',
+      multiplier: lookupRuleMultiplier(defaultCat, defaultWood),
       packagingCost: '',
-      addons: []
+      addons: [],
+      lastConfiguredPrice: 0,
+      priceHistory: []
     });
   };
 
@@ -265,10 +290,38 @@ export default function Home() {
       return;
     }
 
-    const skuExists = productLibrary.some(p => p.sku === cleanSku);
-    if (skuExists && editingSku !== cleanSku) {
+    if (!parseFloat(formData.multiplier)) {
+      alert('Please enter a Multiplier (₹/CFT) before saving.');
+      return;
+    }
+
+    const existingProduct = productLibrary.find(p => p.sku === cleanSku);
+    if (existingProduct && editingSku !== cleanSku) {
       alert(`SKU "${cleanSku}" already exists in the Library. Please use a unique SKU.`);
       return;
+    }
+
+    // Track last 3 price changes if editing an existing product and the quote price changed
+    const existingHistory = Array.isArray(existingProduct?.price_history)
+      ? existingProduct.price_history
+      : [];
+    const oldQuotePrice = existingProduct
+      ? calculateDynamicPrice(existingProduct).quotePrice
+      : 0;
+
+    let updatedHistory = existingHistory;
+    if (existingProduct && oldQuotePrice > 0 && oldQuotePrice !== calculatedSellPrice) {
+      const logEntry = {
+        price: calculatedSellPrice,
+        prev_price: oldQuotePrice,
+        reason: 'Manual save',
+        date: new Date().toLocaleDateString('en-IN', {
+          day: '2-digit',
+          month: 'short',
+          year: '2-digit'
+        })
+      };
+      updatedHistory = [logEntry, ...existingHistory].slice(0, 3);
     }
 
     const payload = {
@@ -289,6 +342,7 @@ export default function Home() {
       packaging_cost: parseFloat(formData.packagingCost) || 0,
       addons: Array.isArray(formData.addons) ? formData.addons : [],
       estimated_selling_price: calculatedSellPrice,
+      price_history: updatedHistory,
       modified_at: new Date().toISOString()
     };
 
@@ -311,6 +365,11 @@ export default function Home() {
       setPendingUploads([]);
       setOriginalEditImage(formData.image_base64 || '');
       setEditingSku(cleanSku);
+      setFormData(prev => ({
+        ...prev,
+        lastConfiguredPrice: calculatedSellPrice,
+        priceHistory: updatedHistory
+      }));
 
       alert(`Product ${cleanSku} saved successfully!`);
       await fetchAllMasterData();
@@ -328,6 +387,8 @@ export default function Home() {
     }
     setEditingSku(product.sku);
     setOriginalEditImage(product.image_base64 || '');
+    const currentCalc = calculateDynamicPrice(product).quotePrice;
+
     setFormData({
       category: product.category || 'Dining Tables',
       sku: product.sku,
@@ -342,7 +403,9 @@ export default function Home() {
       woodCft: product.wood_cft || '',
       multiplier: product.multiplier || '',
       packagingCost: product.packaging_cost || '',
-      addons: Array.isArray(product.addons) ? product.addons : []
+      addons: Array.isArray(product.addons) ? product.addons : [],
+      lastConfiguredPrice: product.estimated_selling_price || currentCalc,
+      priceHistory: Array.isArray(product.price_history) ? product.price_history : []
     });
     setActiveView('workspace');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -370,7 +433,9 @@ export default function Home() {
       woodCft: product.wood_cft || '',
       multiplier: product.multiplier || '',
       packagingCost: product.packaging_cost || '',
-      addons: Array.isArray(product.addons) ? product.addons : []
+      addons: Array.isArray(product.addons) ? product.addons : [],
+      lastConfiguredPrice: 0,
+      priceHistory: []
     });
     setActiveView('workspace');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -603,6 +668,7 @@ export default function Home() {
                   setFormData={setFormData}
                   woodMaster={woodMaster}
                   addonsMaster={addonsMaster}
+                  categoryWoodRules={categoryWoodRules}
                   onCategoryChange={handleCategoryChange}
                   onTrackUpload={handleTrackUpload}
                 />
@@ -689,6 +755,10 @@ export default function Home() {
                             const woodName =
                               woodMaster.find((w) => w.id === item.wood_type_id)?.name || 'Solid Wood';
                             const { quotePrice, exGstPrice } = calculateDynamicPrice(item);
+                            const historyList = Array.isArray(item.price_history)
+                              ? item.price_history
+                              : [];
+                            const prevQuotePrice = historyList[0]?.prev_price || 0;
 
                             const isCardPriceHidden = defaultHidePrices && !revealedPrices[item.sku];
 
@@ -753,6 +823,11 @@ export default function Home() {
                                             {quotePrice > 0 && (
                                               <span className="block text-[10px] font-medium text-[#746b61]">
                                                 Ex-GST: ₹{exGstPrice.toLocaleString()}
+                                              </span>
+                                            )}
+                                            {prevQuotePrice > 0 && prevQuotePrice !== quotePrice && (
+                                              <span className="block text-[9px] text-[#9a8e80] mt-0.5">
+                                                Prev: ₹{Number(prevQuotePrice).toLocaleString()}
                                               </span>
                                             )}
                                           </div>
@@ -866,6 +941,8 @@ export default function Home() {
           <Settings
             woodMaster={woodMaster}
             addonsMaster={addonsMaster}
+            categoryWoodRules={categoryWoodRules}
+            productLibrary={productLibrary}
             refreshData={fetchAllMasterData}
           />
         )}

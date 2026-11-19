@@ -47,13 +47,16 @@ export default function CostingSummary({
   // 3. Packaging Cost (Direct Lump Sum ₹)
   const packagingCost = parseFloat(formData.packagingCost) || 0;
 
-  // 4. Reverse-GST Rounding (18% GST):
-  // Round the GST-inclusive quote up to the nearest ₹1,000 first, then back-calculate Ex-GST & GST
+  // 4. Reverse-GST Rounding (18% GST)
   const rawSubtotal = baseWoodCost + addonsTotal + packagingCost;
   const rawInclGst = rawSubtotal * 1.18;
   const finalQuotePrice = rawInclGst > 0 ? Math.ceil(rawInclGst / 1000) * 1000 : 0;
   const adjustedExGst = finalQuotePrice > 0 ? finalQuotePrice / 1.18 : 0;
   const gstAmount = finalQuotePrice - adjustedExGst;
+
+  // 5. Recent Price Change Log (Last 3)
+  const priceHistory = Array.isArray(formData.priceHistory) ? formData.priceHistory.slice(0, 3) : [];
+  const lastSavedPrice = parseFloat(formData.lastConfiguredPrice) || 0;
 
   return (
     <div className="space-y-6 sticky top-24">
@@ -139,6 +142,38 @@ export default function CostingSummary({
                 Rounded up to nearest ₹1,000
               </p>
             </div>
+
+            {/* SUBTLE LAST CONFIGURED PRICE & LAST 3 CHANGES */}
+            {(lastSavedPrice > 0 || priceHistory.length > 0) && (
+              <div className="mt-4 pt-3 border-t border-[#f0eae1] text-[10px] text-[#746b61] space-y-1.5">
+                {lastSavedPrice > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span>Last Saved Quote:</span>
+                    <span className="font-bold text-[#4a433b]">
+                      ₹{lastSavedPrice.toLocaleString()}
+                    </span>
+                  </div>
+                )}
+
+                {priceHistory.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="font-semibold text-[#5c5349]">Recent Price Log:</p>
+                    {priceHistory.map((log, i) => (
+                      <div key={i} className="flex justify-between items-center text-[10px]">
+                        <span>
+                          {log.prev_price > 0
+                            ? `₹${Number(log.prev_price).toLocaleString()} → ₹${Number(log.price).toLocaleString()}`
+                            : `₹${Number(log.price).toLocaleString()}`}
+                        </span>
+                        <span className="text-[#8c8175]">
+                          {log.reason} • {log.date}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
