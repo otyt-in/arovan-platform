@@ -2,15 +2,28 @@
 
 export default function CostingSummary({
   formData,
+  woodMaster,
   addonsMaster,
   onSave,
   onReset,
   isClientView
 }) {
-  // 1. Base Wood Value = CFT * Multiplier
+  // 1. Primary Wood Value = CFT * Multiplier
   const woodCft = parseFloat(formData.woodCft) || 0;
   const multiplier = parseFloat(formData.multiplier) || 0;
+  const primaryWoodName =
+    woodMaster?.find(w => String(w.id) === String(formData.woodTypeId))?.name || 'Primary Wood';
   const baseWoodCost = woodCft * multiplier;
+
+  // 1b. Optional Secondary Wood Value
+  const secWoodObj = formData.secondaryWood;
+  const secCft = secWoodObj ? parseFloat(secWoodObj.wood_cft) || 0 : 0;
+  const secMult = secWoodObj ? parseFloat(secWoodObj.multiplier) || 0 : 0;
+  const secWoodCost = secCft * secMult;
+  const secWoodName = secWoodObj
+    ? woodMaster?.find(w => String(w.id) === String(secWoodObj.wood_type_id))?.name ||
+      'Secondary Wood'
+    : '';
 
   // 2. Unified Dynamic Components List (Single source of truth)
   const currentAddons = Array.isArray(formData.addons) ? formData.addons : [];
@@ -48,7 +61,7 @@ export default function CostingSummary({
   const packagingCost = parseFloat(formData.packagingCost) || 0;
 
   // 4. Reverse-GST Rounding (18% GST)
-  const rawSubtotal = baseWoodCost + addonsTotal + packagingCost;
+  const rawSubtotal = baseWoodCost + secWoodCost + addonsTotal + packagingCost;
   const rawInclGst = rawSubtotal * 1.18;
   const finalQuotePrice = rawInclGst > 0 ? Math.ceil(rawInclGst / 1000) * 1000 : 0;
   const adjustedExGst = finalQuotePrice > 0 ? finalQuotePrice / 1.18 : 0;
@@ -85,11 +98,24 @@ export default function CostingSummary({
           <>
             <div className="space-y-3 text-sm border-b border-[#e1d8cd] pb-4 mb-5">
               <div className="flex justify-between items-center">
-                <span className="text-[#5c5349] font-medium">Base Wood Value</span>
+                <span className="text-[#5c5349] font-medium">
+                  {secWoodCost > 0 ? `Wood (${primaryWoodName})` : 'Base Wood Value'}
+                </span>
                 <span className="font-bold text-[#171512]">
                   ₹{Math.round(baseWoodCost).toLocaleString()}
                 </span>
               </div>
+
+              {secWoodCost > 0 && (
+                <div className="flex justify-between items-center">
+                  <span className="text-[#5c5349] font-medium">
+                    Wood ({secWoodName})
+                  </span>
+                  <span className="font-bold text-[#171512]">
+                    ₹{Math.round(secWoodCost).toLocaleString()}
+                  </span>
+                </div>
+              )}
 
               {resolvedAddons.map((item, idx) => (
                 <div key={idx} className="flex justify-between items-center">

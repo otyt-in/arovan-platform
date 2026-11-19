@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 
-const CATEGORIES = [
+const FALLBACK_CATEGORIES = [
   'Dining Tables',
   'Center Tables',
   'Console Tables',
@@ -16,11 +16,16 @@ const CATEGORIES = [
   'Custom'
 ];
 
-// Helper: Calculate 18% reverse-GST rounded quote price for a product row
+// Helper: Calculate 18% reverse-GST rounded quote price for a product row (including secondary wood)
 const computeProductQuote = (product, addonsList) => {
   const cft = parseFloat(product.wood_cft) || 0;
   const mult = parseFloat(product.multiplier) || 0;
   const baseWoodCost = cft * mult;
+
+  const sec = product.secondary_wood;
+  const secCft = sec ? parseFloat(sec.wood_cft) || 0 : 0;
+  const secMult = sec ? parseFloat(sec.multiplier) || 0 : 0;
+  const secWoodCost = secCft * secMult;
 
   const miscList = Array.isArray(product.addons) ? product.addons : [];
   const addonsCost = miscList.reduce((sum, item) => {
@@ -41,7 +46,7 @@ const computeProductQuote = (product, addonsList) => {
   }, 0);
 
   const packagingCost = parseFloat(product.packaging_cost) || 0;
-  const rawSubtotal = baseWoodCost + addonsCost + packagingCost;
+  const rawSubtotal = baseWoodCost + secWoodCost + addonsCost + packagingCost;
   const rawInclGst = rawSubtotal * 1.18;
   return rawInclGst > 0 ? Math.ceil(rawInclGst / 1000) * 1000 : 0;
 };
@@ -62,6 +67,7 @@ const appendPriceHistory = (existingHistory, oldPrice, newPrice, reason) => {
 };
 
 export default function Settings({
+  categoryMaster,
   woodMaster,
   addonsMaster,
   categoryWoodRules,
@@ -70,18 +76,19 @@ export default function Settings({
 }) {
   const [unlocked, setUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
-  const [activeTab, setActiveTab] = useState('woods');
+  const [activeTab, setActiveTab] = useState('categories');
   const [saving, setSaving] = useState(false);
   const [addingRule, setAddingRule] = useState(false);
 
   // Master local states
+  const [categories, setCategories] = useState([]);
   const [woods, setWoods] = useState([]);
   const [addons, setAddons] = useState([]);
   const [rules, setRules] = useState([]);
 
   // Quick-Add Rule bar states (Wood Type first, then Category)
   const [newRuleWoodId, setNewRuleWoodId] = useState('');
-  const [newRuleCat, setNewRuleCat] = useState('Dining Tables');
+  const [newRuleCat, setNewRuleCat] = useState('');
   const [newRuleMult, setNewRuleMult] = useState('');
 
   // Rule Filtering & Accordion States
@@ -94,6 +101,11 @@ export default function Settings({
   const [bulkTargetId, setBulkTargetId] = useState('');
   const [bulkPercent, setBulkPercent] = useState('');
   const [bulkRunning, setBulkRunning] = useState(false);
+
+  const categoryNames =
+    categories.length > 0
+      ? categories.map(c => c.name).filter(Boolean)
+      : FALLBACK_CATEGORIES;
 
   // Helper: Prefill multiplier from existing rule or wood reference rate
   const getSuggestedRuleMultiplier = (woodId, cat, rulesList = rules, woodsList = woods) => {
@@ -111,16 +123,45 @@ export default function Settings({
   };
 
   useEffect(() => {
+    if (Array.isArray(categoryMaster) && categoryMaster.length > 0) {
+      const normalizedCats = categoryMaster.map((c, i) => ({
+        ...c,
+        _originalName: c.name,
+        sort_order: c.sort_order ?? i + 1
+      }));
+      setCategories(normalizedCats);
+      const firstCat = normalizedCats[0]?.name || 'Dining Tables';
+      if (!newRuleCat) {
+        setNewRuleCat(firstCat);
+      }
+      if (bulkScope === 'category' && !bulkTargetId) {
+        setBulkTargetId(firstCat);
+      }
+    } else if (categories.length === 0) {
+      setCategories(
+        FALLBACK_CATEGORIES.map((name, i) => ({
+          name,
+          sku_prefix: name.slice(0, 3).toUpperCase(),
+          sort_order: i + 1,
+          _originalName: name,
+          isNew: true
+        }))
+      );
+      if (!newRuleCat) setNewRuleCat(FALLBACK_CATEGORIES[0]);
+    }
+  }, [categoryMaster]);
+
+  useEffect(() => {
     if (woodMaster) {
       setWoods(woodMaster);
       const initialWoodId = newRuleWoodId || (woodMaster[0]?.id ? String(woodMaster[0].id) : '');
       if (!newRuleWoodId && initialWoodId) {
         setNewRuleWoodId(initialWoodId);
       }
-      if (newRuleMult === '' && initialWoodId) {
+      if (newRuleMult === '' && initialWoodId && (newRuleCat || categoryNames[0])) {
         const suggested = getSuggestedRuleMultiplier(
           initialWoodId,
-          newRuleCat,
+          newRuleCat || categoryNames[0],
           categoryWoodRules || rules,
           woodMaster
         );
@@ -135,7 +176,6 @@ export default function Settings({
     }
     if (categoryWoodRules) {
       setRules(categoryWoodRules);
-      // Expand the first wood that has rules by default
       if (categoryWoodRules.length > 0 && Object.keys(expandedWoods).length === 0) {
         const firstWoodKey = String(categoryWoodRules[0].wood_type_id);
         setExpandedWoods({ [firstWoodKey]: true });
@@ -150,6 +190,57 @@ export default function Settings({
     } else {
       alert('Incorrect Admin PIN. Access Denied.');
       setPinInput('');
+    }
+  };
+
+  // --- CATEGORY MASTER HANDLERS ---
+  const handleCategoryFieldChange = (index, field, value) => {
+    const updated = [...categories];
+    updated[index] = {
+      ...updated[index],
+      [field]: field === 'sku_prefix' ? value.toUpperCase().replace(/[^A-Z0-9]/g, '') : value
+    };
+    setCategories(updated);
+  };
+
+  const addCategoryRow = () => {
+    setCategories([
+      ...categories,
+      {
+        name: '',
+        sku_prefix: '',
+        sort_order: categories.length + 1,
+        _originalName: '',
+        isNew: true
+      }
+    ]);
+  };
+
+  const deleteCategoryRow = async (index) => {
+    const item = categories[index];
+    const targetName = item._originalName || item.name;
+
+    if (targetName) {
+      const usedInProducts = (productLibrary || []).filter(p => p.category === targetName).length;
+      const usedInRules = (rules || []).filter(r => r.category === targetName).length;
+      if (usedInProducts > 0 || usedInRules > 0) {
+        alert(
+          `Cannot delete "${targetName}" because it is used by ${usedInProducts} product(s) and ${usedInRules} rule(s).`
+        );
+        return;
+      }
+    }
+
+    if (item.id) {
+      if (!confirm(`Delete category "${item.name}"?`)) return;
+      const { error } = await supabase.from('category_master').delete().eq('id', item.id);
+      if (error) {
+        alert('Failed to delete category: ' + error.message);
+        return;
+      }
+      await refreshData();
+    } else {
+      setCategories(categories.filter((_, i) => i !== index));
     }
   };
 
@@ -308,7 +399,73 @@ export default function Settings({
   const handleSaveAll = async () => {
     setSaving(true);
     try {
-      // 1. Save Woods
+      // 1. Save Categories safely (handles name swaps without unique constraint collision)
+      const validCats = categories
+        .map((c, idx) => ({
+          ...c,
+          name: (c.name || '').trim(),
+          sku_prefix: (c.sku_prefix || c.name || '').trim().slice(0, 4).toUpperCase() || 'PRD',
+          sort_order: idx + 1
+        }))
+        .filter(c => c.name !== '');
+
+      const existingCats = validCats.filter(c => c.id);
+      const newCats = validCats
+        .filter(c => !c.id)
+        .map(c => ({
+          name: c.name,
+          sku_prefix: c.sku_prefix,
+          sort_order: c.sort_order
+        }));
+
+      const targetNameSet = new Set(validCats.map(c => c.name));
+      const collidingCats = existingCats.filter(
+        c => c._originalName && c._originalName !== c.name && targetNameSet.has(c._originalName)
+      );
+
+      for (const c of collidingCats) {
+        const { error: tmpErr } = await supabase
+          .from('category_master')
+          .update({ name: `__TMP_SWAP_${c.id}__` })
+          .eq('id', c.id);
+        if (tmpErr) throw tmpErr;
+      }
+
+      if (existingCats.length > 0) {
+        const cleanExistingCats = existingCats.map(c => ({
+          id: c.id,
+          name: c.name,
+          sku_prefix: c.sku_prefix,
+          sort_order: c.sort_order
+        }));
+        const { error } = await supabase.from('category_master').upsert(cleanExistingCats);
+        if (error) throw error;
+      }
+
+      if (newCats.length > 0) {
+        const { error } = await supabase.from('category_master').insert(newCats);
+        if (error) throw error;
+      }
+
+      const renamedPairs = validCats
+        .filter(c => c._originalName && c._originalName !== c.name)
+        .map(c => ({ oldName: c._originalName, newName: c.name }));
+
+      for (let i = 0; i < renamedPairs.length; i++) {
+        const { oldName, newName } = renamedPairs[i];
+        const marker = `__CAT_RENAME_${i}__`;
+        await supabase.from('product_master').update({ category: marker }).eq('category', oldName);
+        await supabase.from('category_wood_rules').update({ category: marker }).eq('category', oldName);
+      }
+
+      for (let i = 0; i < renamedPairs.length; i++) {
+        const { newName } = renamedPairs[i];
+        const marker = `__CAT_RENAME_${i}__`;
+        await supabase.from('product_master').update({ category: newName }).eq('category', marker);
+        await supabase.from('category_wood_rules').update({ category: newName }).eq('category', marker);
+      }
+
+      // 2. Save Woods
       const existingWoods = woods.filter(w => w.id && w.name.trim() !== '');
       const newWoods = woods
         .filter(w => !w.id && w.name.trim() !== '')
@@ -331,7 +488,7 @@ export default function Settings({
         if (error) throw error;
       }
 
-      // 2. Save Add-ons
+      // 3. Save Add-ons
       const existingAddons = addons.filter(a => a.id && a.name.trim() !== '');
       const newAddons = addons
         .filter(a => !a.id && a.name.trim() !== '')
@@ -374,7 +531,7 @@ export default function Settings({
         if (error) throw error;
       }
 
-      // 3. Save Wood x Category Rules (split existing vs new)
+      // 4. Save Wood x Category Rules (split existing vs new)
       const validRules = rules.filter(r => r.category && r.wood_type_id && r.multiplier > 0);
       const existingRules = validRules
         .filter(r => r.id)
@@ -407,15 +564,18 @@ export default function Settings({
         if (error) throw error;
       }
 
-      // 4. Auto-Recalculate Configured Products in product_master
+      // 5. Auto-Recalculate Configured Products in product_master (Primary + Secondary Wood)
       let updatedProductsCount = 0;
       if (Array.isArray(productLibrary) && productLibrary.length > 0) {
         const productUpdates = [];
 
         for (const prod of productLibrary) {
+          const renamedMatch = renamedPairs.find(p => p.oldName === prod.category);
+          const effectiveCategory = renamedMatch ? renamedMatch.newName : prod.category;
+
           const matchingRule = validRules.find(
             r =>
-              r.category === prod.category &&
+              r.category === effectiveCategory &&
               String(r.wood_type_id) === String(prod.wood_type_id)
           );
 
@@ -423,16 +583,40 @@ export default function Settings({
             ? parseFloat(matchingRule.multiplier)
             : parseFloat(prod.multiplier) || 0;
 
+          let nextSecondaryWood = prod.secondary_wood || null;
+          let secMultChanged = false;
+
+          if (nextSecondaryWood && nextSecondaryWood.wood_type_id) {
+            const matchingSecRule = validRules.find(
+              r =>
+                r.category === effectiveCategory &&
+                String(r.wood_type_id) === String(nextSecondaryWood.wood_type_id)
+            );
+            if (matchingSecRule) {
+              const newSecMult = parseFloat(matchingSecRule.multiplier) || 0;
+              if (parseFloat(nextSecondaryWood.multiplier) !== newSecMult) {
+                secMultChanged = true;
+              }
+              nextSecondaryWood = {
+                ...nextSecondaryWood,
+                multiplier: newSecMult
+              };
+            }
+          }
+
           const updatedProd = {
             ...prod,
-            multiplier: effectiveMultiplier
+            category: effectiveCategory,
+            multiplier: effectiveMultiplier,
+            secondary_wood: nextSecondaryWood
           };
 
           const oldPrice = computeProductQuote(prod, addonsMaster);
           const newPrice = computeProductQuote(updatedProd, savedAddonsSnapshot);
 
           const multChanged =
-            matchingRule && parseFloat(prod.multiplier) !== parseFloat(matchingRule.multiplier);
+            (matchingRule && parseFloat(prod.multiplier) !== parseFloat(matchingRule.multiplier)) ||
+            secMultChanged;
           const priceChanged = oldPrice !== newPrice;
 
           if (multChanged || priceChanged) {
@@ -446,6 +630,7 @@ export default function Settings({
             productUpdates.push({
               sku: prod.sku,
               multiplier: effectiveMultiplier,
+              secondary_wood: nextSecondaryWood,
               estimated_selling_price: newPrice,
               price_history: updatedHistory,
               modified_at: new Date().toISOString()
@@ -455,15 +640,29 @@ export default function Settings({
 
         if (productUpdates.length > 0) {
           for (const upd of productUpdates) {
-            const { error: prodErr } = await supabase
+            const updateFields = {
+              multiplier: upd.multiplier,
+              estimated_selling_price: upd.estimated_selling_price,
+              price_history: upd.price_history,
+              modified_at: upd.modified_at
+            };
+            if (upd.secondary_wood !== undefined) {
+              updateFields.secondary_wood = upd.secondary_wood;
+            }
+
+            let { error: prodErr } = await supabase
               .from('product_master')
-              .update({
-                multiplier: upd.multiplier,
-                estimated_selling_price: upd.estimated_selling_price,
-                price_history: upd.price_history,
-                modified_at: upd.modified_at
-              })
+              .update(updateFields)
               .eq('sku', upd.sku);
+
+            if (prodErr && prodErr.message?.toLowerCase().includes('secondary_wood')) {
+              delete updateFields.secondary_wood;
+              const retry = await supabase
+                .from('product_master')
+                .update(updateFields)
+                .eq('sku', upd.sku);
+              prodErr = retry.error;
+            }
             if (prodErr) throw prodErr;
           }
           updatedProductsCount = productUpdates.length;
@@ -474,7 +673,7 @@ export default function Settings({
       alert(
         updatedProductsCount > 0
           ? `Configuration saved! ${updatedProductsCount} product(s) automatically recalculated and logged.`
-          : 'Configuration saved! All rates are synced.'
+          : 'Configuration saved! All categories and rates are synced.'
       );
     } catch (err) {
       console.error('Error saving settings:', err);
@@ -583,6 +782,13 @@ export default function Settings({
         for (const prod of matchingBulkProducts) {
           const oldPrice = computeProductQuote(prod, addonsMaster);
           const newMult = Math.round((parseFloat(prod.multiplier) || 0) * factor);
+          const nextSec = prod.secondary_wood
+            ? {
+                ...prod.secondary_wood,
+                multiplier: Math.round((parseFloat(prod.secondary_wood.multiplier) || 0) * factor)
+              }
+            : null;
+
           const updatedProdAddons = (prod.addons || []).map(item => {
             const master = addonsMaster.find(a => a.id === item.addon_id);
             const isPerUnit =
@@ -600,6 +806,7 @@ export default function Settings({
           const updatedProd = {
             ...prod,
             multiplier: newMult,
+            secondary_wood: nextSec,
             addons: updatedProdAddons
           };
 
@@ -611,16 +818,30 @@ export default function Settings({
             `Bulk ${signLabel} (${targetName})`
           );
 
-          const { error } = await supabase
+          const bulkFields = {
+            multiplier: newMult,
+            addons: updatedProdAddons,
+            estimated_selling_price: newPrice,
+            price_history: updatedHistory,
+            modified_at: new Date().toISOString()
+          };
+          if (nextSec !== null) {
+            bulkFields.secondary_wood = nextSec;
+          }
+
+          let { error } = await supabase
             .from('product_master')
-            .update({
-              multiplier: newMult,
-              addons: updatedProdAddons,
-              estimated_selling_price: newPrice,
-              price_history: updatedHistory,
-              modified_at: new Date().toISOString()
-            })
+            .update(bulkFields)
             .eq('sku', prod.sku);
+
+          if (error && error.message?.toLowerCase().includes('secondary_wood')) {
+            delete bulkFields.secondary_wood;
+            const retry = await supabase
+              .from('product_master')
+              .update(bulkFields)
+              .eq('sku', prod.sku);
+            error = retry.error;
+          }
           if (error) throw error;
         }
       }
@@ -696,7 +917,7 @@ export default function Settings({
         <div>
           <h2 className="font-serif text-xl text-[#171512]">Master Rate Configuration</h2>
           <p className="text-xs text-[#746b61] mt-0.5">
-            Saving rules or rates automatically recalculates affected products and logs price changes.
+            Saving categories, rules, or rates syncs across the workspace, library, and saved products.
           </p>
         </div>
         <button
@@ -704,12 +925,22 @@ export default function Settings({
           disabled={saving}
           className="px-5 py-2.5 bg-[#171512] text-white text-xs font-bold uppercase tracking-wider rounded-md hover:bg-black transition disabled:opacity-50"
         >
-          {saving ? 'Saving & Recalculating...' : 'Save & Recalculate All'}
+          {saving ? 'Saving & Syncing...' : 'Save & Recalculate All'}
         </button>
       </div>
 
       {/* Sub-navigation Tabs */}
       <div className="flex overflow-x-auto border-b border-[#e1d8cd] px-6 bg-white no-scrollbar">
+        <button
+          onClick={() => setActiveTab('categories')}
+          className={`shrink-0 py-3.5 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition ${
+            activeTab === 'categories'
+              ? 'border-[#171512] text-[#171512]'
+              : 'border-transparent text-[#746b61] hover:text-[#171512]'
+          }`}
+        >
+          Categories ({categories.length})
+        </button>
         <button
           onClick={() => setActiveTab('woods')}
           className={`shrink-0 py-3.5 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition ${
@@ -751,6 +982,69 @@ export default function Settings({
           Bulk Adjust
         </button>
       </div>
+
+      {/* TAB 0: PRODUCT CATEGORIES MASTER */}
+      {activeTab === 'categories' && (
+        <div className="p-6">
+          <div className="mb-4 p-3 bg-[#f4f1eb] rounded-md text-xs text-[#5c5349]">
+            Add categories like <strong>Lounge Chairs</strong>, <strong>Wardrobes</strong>, or <strong>Doors</strong> with a <strong>SKU Prefix</strong> (e.g. <code>LCH</code>, <code>WRD</code>, <code>DR</code>). Order from top to bottom sets dropdown order.
+          </div>
+
+          <div className="space-y-3">
+            <div className="hidden sm:grid sm:grid-cols-12 gap-3 text-[10px] font-bold uppercase tracking-wider text-[#746b61] px-2">
+              <div className="col-span-7">Category Name</div>
+              <div className="col-span-4">SKU Prefix</div>
+              <div className="col-span-1 text-right">Action</div>
+            </div>
+
+            {categories.map((catItem, idx) => (
+              <div
+                key={catItem.id || `new-cat-${idx}`}
+                className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center p-3 sm:p-2 border sm:border-0 border-[#e1d8cd] rounded-md bg-[#faf8f5] sm:bg-transparent"
+              >
+                <div className="sm:col-span-7">
+                  <input
+                    type="text"
+                    value={catItem.name}
+                    onChange={(e) => handleCategoryFieldChange(idx, 'name', e.target.value)}
+                    placeholder="e.g. Lounge Chairs"
+                    className="w-full p-2 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+                  />
+                </div>
+
+                <div className="sm:col-span-4">
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={catItem.sku_prefix}
+                    onChange={(e) => handleCategoryFieldChange(idx, 'sku_prefix', e.target.value)}
+                    placeholder="e.g. LCH"
+                    className="w-full p-2 text-sm font-mono font-bold uppercase border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+                  />
+                </div>
+
+                <div className="sm:col-span-1 text-right">
+                  <button
+                    type="button"
+                    onClick={() => deleteCategoryRow(idx)}
+                    className="text-xs text-red-600 hover:text-red-800 font-semibold px-2 py-1"
+                  >
+                    Del
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={addCategoryRow}
+            className="mt-5 px-4 py-2 border border-dashed border-[#746b61] text-xs font-bold uppercase tracking-wider text-[#171512] rounded-md hover:bg-[#f4f1eb] transition"
+          >
+            + Add Category
+          </button>
+        </div>
+      )}
 
       {/* TAB 1: WOOD TYPES */}
       {activeTab === 'woods' && (
@@ -850,7 +1144,7 @@ export default function Settings({
                 onChange={(e) => handleSelectRuleCat(e.target.value)}
                 className="w-full h-9 px-2.5 text-xs bg-white border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
               >
-                {CATEGORIES.map(cat => (
+                {categoryNames.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
@@ -1131,7 +1425,7 @@ export default function Settings({
                   const newScope = e.target.value;
                   setBulkScope(newScope);
                   if (newScope === 'category') {
-                    setBulkTargetId(CATEGORIES[0]);
+                    setBulkTargetId(categoryNames[0] || '');
                   } else {
                     setBulkTargetId(addons[0]?.id ? String(addons[0].id) : '');
                   }
@@ -1163,7 +1457,7 @@ export default function Settings({
                   onChange={(e) => setBulkTargetId(e.target.value)}
                   className="w-full h-10 px-3 text-xs bg-white border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
                 >
-                  {CATEGORIES.map(cat => (
+                  {categoryNames.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>

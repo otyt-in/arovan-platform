@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { supabase } from '../utils/supabaseClient';
 
-const CATEGORIES = [
+const FALLBACK_CATEGORIES = [
   'Dining Tables',
   'Center Tables',
   'Console Tables',
@@ -19,6 +19,7 @@ const CATEGORIES = [
 export default function CostingForm({
   formData,
   setFormData,
+  categoryMaster,
   woodMaster,
   addonsMaster,
   categoryWoodRules,
@@ -28,8 +29,15 @@ export default function CostingForm({
   const [uploading, setUploading] = useState(false);
   const [dimUnit, setDimUnit] = useState('ft'); // Default to Ft + In (' ")
 
+  const categoryOptions =
+    Array.isArray(categoryMaster) && categoryMaster.length > 0
+      ? categoryMaster.map(c => c.name).filter(Boolean)
+      : FALLBACK_CATEGORIES;
+
+  const activeShape = formData.dimShape || 'rectangular';
+
   const findRuleMultiplier = (cat, woodId) => {
-    if (!Array.isArray(categoryWoodRules)) return null;
+    if (!Array.isArray(categoryWoodRules) || !woodId) return null;
     const match = categoryWoodRules.find(
       r => r.category === cat && String(r.wood_type_id) === String(woodId)
     );
@@ -39,7 +47,6 @@ export default function CostingForm({
   const handleChange = (field, value) => {
     setFormData(prev => {
       const next = { ...prev, [field]: value };
-      // When wood type changes, auto-fill matching Category x Wood rule (or clear to blank if unconfigured)
       if (field === 'woodTypeId') {
         const ruleMult = findRuleMultiplier(prev.category, value);
         next.multiplier = ruleMult !== null ? ruleMult : '';
@@ -48,20 +55,105 @@ export default function CostingForm({
     });
   };
 
+  const handleShapeChange = (newShape) => {
+    setFormData(prev => {
+      const updated = { ...prev, dimShape: newShape };
+      if (newShape === 'round' && prev.dimLength && !prev.dimWidth) {
+        updated.dimWidth = prev.dimLength;
+      }
+      return updated;
+    });
+  };
+
+  // --- SECONDARY WOOD HELPERS ---
+  const secondaryWood = formData.secondaryWood || null;
+
+  const handleEnableSecondaryWood = () => {
+    if (!Array.isArray(woodMaster) || woodMaster.length === 0) {
+      alert('No wood types configured in Settings yet.');
+      return;
+    }
+    const altWood =
+      woodMaster.find(w => String(w.id) !== String(formData.woodTypeId)) || woodMaster[0];
+    const ruleMult = findRuleMultiplier(formData.category, altWood.id);
+
+    setFormData(prev => ({
+      ...prev,
+      secondaryWood: {
+        wood_type_id: altWood.id,
+        wood_cft: '',
+        multiplier: ruleMult !== null ? ruleMult : ''
+      }
+    }));
+  };
+
+  const handleSecondaryWoodChange = (field, value) => {
+    setFormData(prev => {
+      const currentSec = prev.secondaryWood || {
+        wood_type_id: woodMaster[0]?.id || '',
+        wood_cft: '',
+        multiplier: ''
+      };
+      if (field === 'wood_type_id') {
+        const ruleMult = findRuleMultiplier(prev.category, value);
+        return {
+          ...prev,
+          secondaryWood: {
+            ...currentSec,
+            wood_type_id: value,
+            multiplier: ruleMult !== null ? ruleMult : ''
+          }
+        };
+      }
+      return {
+        ...prev,
+        secondaryWood: {
+          ...currentSec,
+          [field]: value
+        }
+      };
+    });
+  };
+
+  const handleRemoveSecondaryWood = () => {
+    setFormData(prev => ({
+      ...prev,
+      secondaryWood: null
+    }));
+  };
+
   const activeRuleMult = findRuleMultiplier(formData.category, formData.woodTypeId);
   const isCustomOverride =
     activeRuleMult !== null &&
     String(formData.multiplier).trim() !== '' &&
     parseFloat(formData.multiplier) !== parseFloat(activeRuleMult);
 
+  const secRuleMult = secondaryWood
+    ? findRuleMultiplier(formData.category, secondaryWood.wood_type_id)
+    : null;
+  const isSecCustomOverride =
+    secondaryWood &&
+    secRuleMult !== null &&
+    String(secondaryWood.multiplier).trim() !== '' &&
+    parseFloat(secondaryWood.multiplier) !== parseFloat(secRuleMult);
+
   // --- WHOLE-INTEGER DIMENSION CONVERSION HELPERS ---
   const handleInchInput = (field, rawVal) => {
     if (rawVal === '') {
-      handleChange(field, '');
+      setFormData(prev => ({
+        ...prev,
+        [field]: '',
+        ...(activeShape === 'round' && field === 'dimLength' ? { dimWidth: '' } : {})
+      }));
       return;
     }
     const wholeInches = Math.max(0, Math.round(Number(rawVal) || 0));
-    handleChange(field, String(wholeInches));
+    const strVal = String(wholeInches);
+    setFormData(prev => ({
+      ...prev,
+      [field]: strVal,
+      ...(activeShape === 'round' && field === 'dimLength' ? { dimWidth: strVal } : {})
+    }));
   };
 
   const getFeetPart = (totalInches) => {
@@ -84,7 +176,13 @@ export default function CostingForm({
     const newIn = part === 'in' ? cleanVal : currentIn;
 
     const newTotal = newFt * 12 + newIn;
-    handleChange(field, newTotal > 0 ? String(newTotal) : '');
+    const strVal = newTotal > 0 ? String(newTotal) : '';
+
+    setFormData(prev => ({
+      ...prev,
+      [field]: strVal,
+      ...(activeShape === 'round' && field === 'dimLength' ? { dimWidth: strVal } : {})
+    }));
   };
 
   const formatFtInPreview = (totalInches) => {
@@ -95,10 +193,17 @@ export default function CostingForm({
     return `${ft}' ${inc}"`;
   };
 
-  // Top surface area in sq ft from stored whole inches (L x W / 144)
+  // Top surface area in sq ft (circle formula for Round Dia, rectangle for Rectangular / Live-Edge)
   const lenIn = Math.round(Number(formData.dimLength) || 0);
   const widIn = Math.round(Number(formData.dimWidth) || 0);
-  const topAreaSqFt = lenIn > 0 && widIn > 0 ? (lenIn * widIn) / 144 : 0;
+  const topAreaSqFt =
+    activeShape === 'round'
+      ? lenIn > 0
+        ? (Math.PI * Math.pow(lenIn / 2, 2)) / 144
+        : 0
+      : lenIn > 0 && widIn > 0
+      ? (lenIn * widIn) / 144
+      : 0;
 
   // --- DYNAMIC ADD-ONS HANDLERS ---
   const currentAddons = Array.isArray(formData.addons) ? formData.addons : [];
@@ -224,6 +329,31 @@ export default function CostingForm({
     }
   };
 
+  const dimFields =
+    activeShape === 'round'
+      ? [
+          { label: 'Diameter (Dia)', field: 'dimLength', placeholder: 'Dia (in)' },
+          { label: 'Height', field: 'dimHeight', placeholder: 'H (in)' }
+        ]
+      : activeShape === 'live-edge'
+      ? [
+          { label: 'Approx. Length', field: 'dimLength', placeholder: 'Avg L (in)' },
+          { label: 'Approx. Width', field: 'dimWidth', placeholder: 'Avg W (in)' },
+          { label: 'Height', field: 'dimHeight', placeholder: 'H (in)' }
+        ]
+      : [
+          { label: 'Length', field: 'dimLength', placeholder: 'L (in)' },
+          { label: 'Width', field: 'dimWidth', placeholder: 'W (in)' },
+          { label: 'Height', field: 'dimHeight', placeholder: 'H (in)' }
+        ];
+
+  const secLineTotal = secondaryWood
+    ? Math.round(
+        (parseFloat(secondaryWood.wood_cft) || 0) *
+          (parseFloat(secondaryWood.multiplier) || 0)
+      )
+    : 0;
+
   return (
     <div className="space-y-6">
       {/* SECTION 1: PRODUCT IDENTITY */}
@@ -247,16 +377,26 @@ export default function CostingForm({
               onChange={(e) => {
                 const newCat = e.target.value;
                 const ruleMult = findRuleMultiplier(newCat, formData.woodTypeId);
+                const secRule = formData.secondaryWood
+                  ? findRuleMultiplier(newCat, formData.secondaryWood.wood_type_id)
+                  : null;
+
                 setFormData(prev => ({
                   ...prev,
                   category: newCat,
-                  multiplier: ruleMult !== null ? ruleMult : ''
+                  multiplier: ruleMult !== null ? ruleMult : '',
+                  secondaryWood: prev.secondaryWood
+                    ? {
+                        ...prev.secondaryWood,
+                        multiplier: secRule !== null ? secRule : ''
+                      }
+                    : null
                 }));
                 if (onCategoryChange) onCategoryChange(newCat);
               }}
               className="w-full p-2.5 text-sm bg-white border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
             >
-              {CATEGORIES.map(cat => (
+              {categoryOptions.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
             </select>
@@ -352,9 +492,9 @@ export default function CostingForm({
         </div>
       </div>
 
-      {/* SECTION 2: REFERENCE DIMENSIONS (DEFAULT FT + IN TOGGLE + TOP AREA SQ FT) */}
+      {/* SECTION 2: REFERENCE DIMENSIONS (SHAPE + FT/IN OR INCHES + TOP AREA) */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <div className="flex items-center gap-2.5">
             <span className="w-5 h-5 rounded-full bg-[#171512] text-white text-[11px] font-bold flex items-center justify-center">
               2
@@ -398,13 +538,38 @@ export default function CostingForm({
           </div>
         </div>
 
+        {/* Shape Selector Pills */}
+        <div className="flex flex-wrap items-center gap-2 mb-5">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#746b61] mr-1">
+            Form:
+          </span>
+          {[
+            { id: 'rectangular', label: 'Rectangular' },
+            { id: 'round', label: 'Round (Dia)' },
+            { id: 'live-edge', label: 'Live-Edge' }
+          ].map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => handleShapeChange(opt.id)}
+              className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
+                activeShape === opt.id
+                  ? 'bg-[#171512] text-white'
+                  : 'bg-[#f4f1eb] text-[#5c5349] hover:bg-[#e8e1d7]'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
         {dimUnit === 'ft' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              { label: 'Length', field: 'dimLength' },
-              { label: 'Width', field: 'dimWidth' },
-              { label: 'Height', field: 'dimHeight' }
-            ].map(({ label, field }) => (
+          <div
+            className={`grid grid-cols-1 gap-4 ${
+              activeShape === 'round' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
+            }`}
+          >
+            {dimFields.map(({ label, field }) => (
               <div key={field}>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-[11px] font-bold text-[#4a433b]">{label}</label>
@@ -448,12 +613,12 @@ export default function CostingForm({
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              { label: 'Length (In)', field: 'dimLength', placeholder: 'L (in)' },
-              { label: 'Width (In)', field: 'dimWidth', placeholder: 'W (in)' },
-              { label: 'Height (In)', field: 'dimHeight', placeholder: 'H (in)' }
-            ].map(({ label, field, placeholder }) => (
+          <div
+            className={`grid grid-cols-1 gap-4 ${
+              activeShape === 'round' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
+            }`}
+          >
+            {dimFields.map(({ label, field, placeholder }) => (
               <div key={field}>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-[11px] font-bold text-[#4a433b]">{label}</label>
@@ -490,7 +655,7 @@ export default function CostingForm({
         </div>
 
         {/* PRIMARY WOOD, MULTIPLIER & PACKAGING */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-5 border-b border-[#f0eae1]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-4">
           <div>
             <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
               Type of Wood
@@ -571,6 +736,103 @@ export default function CostingForm({
               className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
             />
           </div>
+        </div>
+
+        {/* OPTIONAL SECONDARY WOOD FOR MIXED-WOOD PIECES */}
+        <div className="pb-5 border-b border-[#f0eae1]">
+          {!secondaryWood ? (
+            <button
+              type="button"
+              onClick={handleEnableSecondaryWood}
+              className="text-[11px] font-bold text-[#5c5349] hover:text-[#171512] underline underline-offset-2 transition"
+            >
+              + Add Secondary Wood (for mixed-wood pieces)
+            </button>
+          ) : (
+            <div className="bg-[#faf8f5] border border-[#e8e1d7] rounded-md p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#5c5349]">
+                  Secondary Wood (Mixed Wood)
+                </span>
+                <button
+                  type="button"
+                  onClick={handleRemoveSecondaryWood}
+                  className="text-[10px] font-bold text-red-600 hover:text-red-800"
+                >
+                  Remove
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                <div className="sm:col-span-4">
+                  <label className="block text-[10px] font-bold text-[#4a433b] mb-1">
+                    Secondary Wood Type
+                  </label>
+                  <select
+                    value={secondaryWood.wood_type_id}
+                    onChange={(e) => handleSecondaryWoodChange('wood_type_id', e.target.value)}
+                    className="w-full h-9 px-2.5 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
+                  >
+                    {woodMaster.map(wood => (
+                      <option key={wood.id} value={wood.id}>{wood.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="sm:col-span-3">
+                  <label className="block text-[10px] font-bold text-[#4a433b] mb-1">
+                    Quantity (CFT)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={secondaryWood.wood_cft}
+                    onChange={(e) => handleSecondaryWoodChange('wood_cft', e.target.value)}
+                    placeholder="0.00"
+                    className="w-full h-9 px-2.5 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
+                  />
+                </div>
+
+                <div className="sm:col-span-3">
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <label className="text-[10px] font-bold text-[#4a433b]">
+                      Multiplier (₹)
+                    </label>
+                    {secRuleMult !== null ? (
+                      isSecCustomOverride ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSecondaryWoodChange('multiplier', secRuleMult)}
+                          className="text-[10px] font-semibold text-amber-700 underline"
+                        >
+                          Custom
+                        </button>
+                      ) : (
+                        <span className="text-[10px] font-semibold text-emerald-700">
+                          Rule: ₹{Number(secRuleMult).toLocaleString()}
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-[10px] text-[#746b61]">Manual</span>
+                    )}
+                  </div>
+                  <input
+                    type="number"
+                    value={secondaryWood.multiplier}
+                    onChange={(e) => handleSecondaryWoodChange('multiplier', e.target.value)}
+                    placeholder={secRuleMult ? secRuleMult : 'Manual ₹/CFT'}
+                    className="w-full h-9 px-2.5 text-xs font-semibold bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 text-right pb-1.5">
+                  <span className="text-xs font-bold text-[#171512] tabular-nums">
+                    {secLineTotal > 0 ? `₹${secLineTotal.toLocaleString()}` : '—'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* DYNAMIC ADDITIONAL COMPONENTS */}
