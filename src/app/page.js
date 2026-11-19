@@ -79,8 +79,6 @@ export default function Home() {
     woodTypeId: '',
     woodCft: '',
     multiplier: '',
-    rattanSqft: '',
-    cushionQty: '',
     packagingCost: '',
     addons: []
   });
@@ -167,7 +165,6 @@ export default function Home() {
   };
 
   // --- SAFE STORAGE CLEANUP HELPER ---
-  // Only deletes an image file if no other saved product in productLibrary uses it
   const removeUnusedStorageImages = async (urlsToRemove, activeSkuToIgnore = null) => {
     const filesToDelete = urlsToRemove
       .filter(Boolean)
@@ -189,13 +186,12 @@ export default function Home() {
     setPendingUploads(prev => [...prev, newUrl]);
   };
 
-  // --- LIVE DYNAMIC ERP PRICE CALCULATOR ---
+  // --- LIVE DYNAMIC ERP PRICE CALCULATOR (WITH 18% REVERSE-GST ROUNDING) ---
   const calculateDynamicPrice = (product) => {
     const cft = parseFloat(product.wood_cft) || 0;
     const mult = parseFloat(product.multiplier) || 0;
     const baseWoodCost = cft * mult;
 
-    // Unified components list: Fabric + Cushion (Price x Count), Per-Unit (Qty x Rate), or Lump-Sum (₹)
     const miscList = Array.isArray(product.addons) ? product.addons : [];
     const addonsCost = miscList.reduce((sum, item) => {
       const master = addonsMaster.find(a => a.id === item.addon_id);
@@ -216,8 +212,12 @@ export default function Home() {
 
     const packagingCost = parseFloat(product.packaging_cost) || 0;
 
-    const rawTotal = baseWoodCost + addonsCost + packagingCost;
-    return rawTotal > 0 ? Math.ceil(rawTotal / 1000) * 1000 : 0;
+    const rawSubtotal = baseWoodCost + addonsCost + packagingCost;
+    const rawInclGst = rawSubtotal * 1.18;
+    const quotePrice = rawInclGst > 0 ? Math.ceil(rawInclGst / 1000) * 1000 : 0;
+    const exGstPrice = quotePrice > 0 ? Math.round(quotePrice / 1.18) : 0;
+
+    return { quotePrice, exGstPrice };
   };
 
   // --- FORM ACTIONS ---
@@ -232,7 +232,6 @@ export default function Home() {
   };
 
   const handleResetForm = async () => {
-    // Clean up any unsaved temporary uploads made during this form session
     if (pendingUploads.length > 0) {
       await removeUnusedStorageImages(pendingUploads);
       setPendingUploads([]);
@@ -254,8 +253,6 @@ export default function Home() {
       woodTypeId: woodMaster[0]?.id || '',
       woodCft: '',
       multiplier: '',
-      rattanSqft: '',
-      cushionQty: '',
       packagingCost: '',
       addons: []
     });
@@ -296,16 +293,13 @@ export default function Home() {
     };
 
     try {
-      // 1. Upsert the new/updated SKU row FIRST so data is safely stored
       const { error } = await supabase.from('product_master').upsert(payload);
       if (error) throw error;
 
-      // 2. If user renamed the SKU during edit, delete the old SKU row AFTER upsert succeeds
       if (editingSku && editingSku !== cleanSku) {
         await supabase.from('product_master').delete().eq('sku', editingSku);
       }
 
-      // 3. Clean up any intermediate uploads or replaced image from storage bucket
       const discardedUploads = pendingUploads.filter(url => url !== formData.image_base64);
       if (originalEditImage && originalEditImage !== formData.image_base64) {
         discardedUploads.push(originalEditImage);
@@ -347,8 +341,6 @@ export default function Home() {
       woodTypeId: product.wood_type_id || woodMaster[0]?.id || '',
       woodCft: product.wood_cft || '',
       multiplier: product.multiplier || '',
-      rattanSqft: product.rattan_sqft || '',
-      cushionQty: product.cushion_qty || '',
       packagingCost: product.packaging_cost || '',
       addons: Array.isArray(product.addons) ? product.addons : []
     });
@@ -377,8 +369,6 @@ export default function Home() {
       woodTypeId: product.wood_type_id || woodMaster[0]?.id || '',
       woodCft: product.wood_cft || '',
       multiplier: product.multiplier || '',
-      rattanSqft: product.rattan_sqft || '',
-      cushionQty: product.cushion_qty || '',
       packagingCost: product.packaging_cost || '',
       addons: Array.isArray(product.addons) ? product.addons : []
     });
@@ -640,7 +630,7 @@ export default function Home() {
                 <h2 className="font-serif text-xl text-[#171512]">Product Library</h2>
                 {!defaultHidePrices && lastSyncTime && (
                   <p className="text-[11px] text-[#746b61] mt-0.5">
-                    Live Pricing Synced: <span className="font-semibold">{lastSyncTime}</span>
+                    Live Pricing Synced (Incl. 18% GST): <span className="font-semibold">{lastSyncTime}</span>
                   </p>
                 )}
               </div>
@@ -698,7 +688,7 @@ export default function Home() {
                           {items.map((item) => {
                             const woodName =
                               woodMaster.find((w) => w.id === item.wood_type_id)?.name || 'Solid Wood';
-                            const livePrice = calculateDynamicPrice(item);
+                            const { quotePrice, exGstPrice } = calculateDynamicPrice(item);
 
                             const isCardPriceHidden = defaultHidePrices && !revealedPrices[item.sku];
 
@@ -745,20 +735,27 @@ export default function Home() {
 
                                   {/* Card Body */}
                                   <div className="p-4">
-                                    <div className="flex items-center justify-between gap-2 mb-2.5">
+                                    <div className="flex items-start justify-between gap-2 mb-2.5">
                                       <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-[#f4f1eb] text-[#5c5349] rounded">
                                         {item.sku}
                                       </span>
 
-                                      <div className="flex items-center gap-1.5">
+                                      <div className="flex items-start gap-1.5">
                                         {isCardPriceHidden ? (
                                           <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 bg-[#faf8f5] border border-[#dcd3c9] text-[#5c5349] rounded-full">
                                             Exquisite Craft
                                           </span>
                                         ) : (
-                                          <span className="text-base font-extrabold text-[#171512]">
-                                            ₹{livePrice.toLocaleString()}
-                                          </span>
+                                          <div className="text-right leading-tight">
+                                            <span className="block text-base font-extrabold text-[#171512]">
+                                              ₹{quotePrice.toLocaleString()}
+                                            </span>
+                                            {quotePrice > 0 && (
+                                              <span className="block text-[10px] font-medium text-[#746b61]">
+                                                Ex-GST: ₹{exGstPrice.toLocaleString()}
+                                              </span>
+                                            )}
+                                          </div>
                                         )}
 
                                         {/* Per-product eye toggle when in Client View */}
@@ -797,7 +794,7 @@ export default function Home() {
 
                                     {/* Line 2: Compact Dual Dimensions (Inches + Ft/In) */}
                                     {hasDims && (
-                                      <div className="text-[11px] text-[#5c5349] bg-[#faf8f5] border border-[#e8e1d7] rounded px-2.5 py-1.5 mb-2.5 leading-snug">
+                                      <div className="text-[11px] text-[#5c5349] bg-[#faf8f5] border border-[#e1d8cd] rounded px-2.5 py-1.5 mb-2.5 leading-snug">
                                         <span className="font-semibold text-[#171512]">
                                           📏 {inchesParts.join(' × ')}
                                         </span>
@@ -815,7 +812,7 @@ export default function Home() {
                                     )}
 
                                     {item.inspiration && (
-                                      <details className="mt-2 text-xs text-[#5c5349] bg-[#faf8f5] p-2.5 rounded border border-[#e8e1d7]">
+                                      <details className="mt-2 text-xs text-[#5c5349] bg-[#faf8f5] p-2.5 rounded border border-[#e1d8cd]">
                                         <summary className="cursor-pointer font-bold text-[#171512] select-none">
                                           Read Story
                                         </summary>

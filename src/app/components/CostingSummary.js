@@ -47,9 +47,13 @@ export default function CostingSummary({
   // 3. Packaging Cost (Direct Lump Sum ₹)
   const packagingCost = parseFloat(formData.packagingCost) || 0;
 
-  // 4. Final Selling Price (Rounded up to nearest ₹1,000)
-  const rawTotal = baseWoodCost + addonsTotal + packagingCost;
-  const estimatedSellingPrice = rawTotal > 0 ? Math.ceil(rawTotal / 1000) * 1000 : 0;
+  // 4. Reverse-GST Rounding (18% GST):
+  // Round the GST-inclusive quote up to the nearest ₹1,000 first, then back-calculate Ex-GST & GST
+  const rawSubtotal = baseWoodCost + addonsTotal + packagingCost;
+  const rawInclGst = rawSubtotal * 1.18;
+  const finalQuotePrice = rawInclGst > 0 ? Math.ceil(rawInclGst / 1000) * 1000 : 0;
+  const adjustedExGst = finalQuotePrice > 0 ? finalQuotePrice / 1.18 : 0;
+  const gstAmount = finalQuotePrice - adjustedExGst;
 
   return (
     <div className="space-y-6 sticky top-24">
@@ -101,17 +105,37 @@ export default function CostingSummary({
                   </span>
                 </div>
               )}
+
+              {finalQuotePrice > 0 && (
+                <>
+                  <div className="pt-2 border-t border-[#f0eae1] flex justify-between items-center text-xs">
+                    <span className="text-[#746b61]">Taxable Value (Ex-GST)</span>
+                    <span className="font-semibold text-[#4a433b]">
+                      ₹{Math.round(adjustedExGst).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-[#746b61]">GST (18%)</span>
+                    <span className="font-semibold text-[#4a433b]">
+                      + ₹{Math.round(gstAmount).toLocaleString()}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* FINAL ESTIMATED SELLING PRICE BOX */}
+            {/* FINAL QUOTE PRICE BOX */}
             <div className="bg-[#faf8f5] border border-[#dcd3c9] rounded-lg p-5 text-center">
               <p className="text-[10px] font-bold uppercase tracking-widest text-[#746b61] mb-1">
-                Estimated Selling Price
+                Estimated Quote (Incl. 18% GST)
               </p>
               <p className="text-3xl font-extrabold text-[#171512] tracking-tight">
-                ₹{estimatedSellingPrice.toLocaleString()}
+                ₹{finalQuotePrice.toLocaleString()}
               </p>
-              <p className="text-[10px] italic text-[#746b61] mt-1">
+              <p className="text-[11px] font-medium text-[#5c5349] mt-1.5">
+                Ex-GST: ₹{Math.round(adjustedExGst).toLocaleString()} • GST: ₹{Math.round(gstAmount).toLocaleString()}
+              </p>
+              <p className="text-[10px] italic text-[#746b61] mt-0.5">
                 Rounded up to nearest ₹1,000
               </p>
             </div>
@@ -134,7 +158,7 @@ export default function CostingSummary({
           <div className="space-y-3">
             <button
               type="button"
-              onClick={() => onSave(estimatedSellingPrice)}
+              onClick={() => onSave(finalQuotePrice)}
               className="w-full py-3 bg-[#171512] text-white text-xs font-bold uppercase tracking-wider rounded-md hover:bg-black transition shadow-sm"
             >
               Save Product to Cloud
