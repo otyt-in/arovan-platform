@@ -72,17 +72,16 @@ export default function Home() {
     category: 'Dining Tables',
     sku: '',
     name: '',
+    seater: '',
     image_base64: '',
     notes: '',
     inspiration: '',
-    dimShape: 'rectangular',
     dimLength: '',
     dimWidth: '',
     dimHeight: '',
     woodTypeId: '',
     woodCft: '',
     multiplier: '',
-    secondaryWood: null,
     packagingCost: '',
     addons: [],
     lastConfiguredPrice: 0,
@@ -235,11 +234,6 @@ export default function Home() {
     const mult = parseFloat(product.multiplier) || 0;
     const baseWoodCost = cft * mult;
 
-    const sec = product.secondary_wood;
-    const secCft = sec ? parseFloat(sec.wood_cft) || 0 : 0;
-    const secMult = sec ? parseFloat(sec.multiplier) || 0 : 0;
-    const secWoodCost = secCft * secMult;
-
     const miscList = Array.isArray(product.addons) ? product.addons : [];
     const addonsCost = miscList.reduce((sum, item) => {
       const master = addonsMaster.find(a => a.id === item.addon_id);
@@ -260,7 +254,7 @@ export default function Home() {
 
     const packagingCost = parseFloat(product.packaging_cost) || 0;
 
-    const rawSubtotal = baseWoodCost + secWoodCost + addonsCost + packagingCost;
+    const rawSubtotal = baseWoodCost + addonsCost + packagingCost;
     const rawInclGst = rawSubtotal * 1.18;
     const quotePrice = rawInclGst > 0 ? Math.ceil(rawInclGst / 1000) * 1000 : 0;
     const exGstPrice = quotePrice > 0 ? Math.round(quotePrice / 1.18) : 0;
@@ -293,17 +287,16 @@ export default function Home() {
       category: defaultCat,
       sku: generateSmartSku(defaultCat),
       name: '',
+      seater: '',
       image_base64: '',
       notes: '',
       inspiration: '',
-      dimShape: 'rectangular',
       dimLength: '',
       dimWidth: '',
       dimHeight: '',
       woodTypeId: defaultWood,
       woodCft: '',
       multiplier: lookupRuleMultiplier(defaultCat, defaultWood),
-      secondaryWood: null,
       packagingCost: '',
       addons: [],
       lastConfiguredPrice: 0,
@@ -351,37 +344,19 @@ export default function Home() {
       updatedHistory = [logEntry, ...existingHistory].slice(0, 3);
     }
 
-    const activeShape = formData.dimShape || 'rectangular';
-    const parsedLen = formData.dimLength ? Math.round(parseFloat(formData.dimLength)) : null;
-    const parsedWid =
-      activeShape === 'round'
-        ? parsedLen
-        : formData.dimWidth
-        ? Math.round(parseFloat(formData.dimWidth))
-        : null;
-    const parsedHei = formData.dimHeight ? Math.round(parseFloat(formData.dimHeight)) : null;
+    const cleanSeater = formData.seater ? String(formData.seater).trim() : null;
 
-    const secCftVal = formData.secondaryWood ? parseFloat(formData.secondaryWood.wood_cft) || 0 : 0;
-    const secMultVal = formData.secondaryWood ? parseFloat(formData.secondaryWood.multiplier) || 0 : 0;
-    const cleanSecondaryWood =
-      formData.secondaryWood && (secCftVal > 0 || secMultVal > 0)
-        ? {
-            wood_type_id: parseInt(formData.secondaryWood.wood_type_id, 10) || null,
-            wood_cft: secCftVal,
-            multiplier: secMultVal
-          }
-        : null;
-
-    const basePayload = {
+    const payload = {
       sku: cleanSku,
       category: formData.category,
       name: formData.name.trim(),
+      seater: cleanSeater,
       image_base64: formData.image_base64 || null,
       notes: formData.notes.trim(),
       inspiration: formData.inspiration.trim(),
-      dim_length: parsedLen,
-      dim_width: parsedWid,
-      dim_height: parsedHei,
+      dim_length: formData.dimLength ? Math.round(parseFloat(formData.dimLength)) : null,
+      dim_width: formData.dimWidth ? Math.round(parseFloat(formData.dimWidth)) : null,
+      dim_height: formData.dimHeight ? Math.round(parseFloat(formData.dimHeight)) : null,
       wood_type_id: parseInt(formData.woodTypeId, 10) || null,
       wood_cft: parseFloat(formData.woodCft) || 0,
       multiplier: parseFloat(formData.multiplier) || 0,
@@ -395,20 +370,13 @@ export default function Home() {
     };
 
     try {
-      let { error } = await supabase
-        .from('product_master')
-        .upsert({ ...basePayload, dim_shape: activeShape, secondary_wood: cleanSecondaryWood });
+      let { error } = await supabase.from('product_master').upsert(payload);
 
-      if (error && error.message?.toLowerCase().includes('secondary_wood')) {
-        const retryWithoutSec = await supabase
-          .from('product_master')
-          .upsert({ ...basePayload, dim_shape: activeShape });
-        error = retryWithoutSec.error;
-      }
-
-      if (error && error.message?.toLowerCase().includes('dim_shape')) {
-        const retryBase = await supabase.from('product_master').upsert(basePayload);
-        error = retryBase.error;
+      // Fallback if `seater` column has not been added to `product_master` yet
+      if (error && error.message?.toLowerCase().includes('seater')) {
+        const { seater, ...fallbackPayload } = payload;
+        const retry = await supabase.from('product_master').upsert(fallbackPayload);
+        error = retry.error;
       }
 
       if (error) throw error;
@@ -430,7 +398,6 @@ export default function Home() {
       setEditingSku(cleanSku);
       setFormData(prev => ({
         ...prev,
-        secondaryWood: cleanSecondaryWood,
         lastConfiguredPrice: calculatedSellPrice,
         priceHistory: updatedHistory
       }));
@@ -457,17 +424,16 @@ export default function Home() {
       category: product.category || categoryMaster[0]?.name || 'Dining Tables',
       sku: product.sku,
       name: product.name || '',
+      seater: product.seater || '',
       image_base64: product.image_base64 || '',
       notes: product.notes || '',
       inspiration: product.inspiration || '',
-      dimShape: product.dim_shape || 'rectangular',
       dimLength: product.dim_length ? String(Math.round(product.dim_length)) : '',
       dimWidth: product.dim_width ? String(Math.round(product.dim_width)) : '',
       dimHeight: product.dim_height ? String(Math.round(product.dim_height)) : '',
       woodTypeId: product.wood_type_id || woodMaster[0]?.id || '',
       woodCft: product.wood_cft || '',
       multiplier: product.multiplier || '',
-      secondaryWood: product.secondary_wood || null,
       packagingCost: product.packaging_cost || '',
       addons: Array.isArray(product.addons) ? product.addons : [],
       lastConfiguredPrice: product.estimated_selling_price || currentCalc,
@@ -489,17 +455,16 @@ export default function Home() {
       category: product.category || categoryMaster[0]?.name || 'Dining Tables',
       sku: newSku,
       name: `${product.name} (Copy)`,
+      seater: product.seater || '',
       image_base64: '',
       notes: product.notes || '',
       inspiration: product.inspiration || '',
-      dimShape: product.dim_shape || 'rectangular',
       dimLength: product.dim_length ? String(Math.round(product.dim_length)) : '',
       dimWidth: product.dim_width ? String(Math.round(product.dim_width)) : '',
       dimHeight: product.dim_height ? String(Math.round(product.dim_height)) : '',
       woodTypeId: product.wood_type_id || woodMaster[0]?.id || '',
       woodCft: product.wood_cft || '',
       multiplier: product.multiplier || '',
-      secondaryWood: product.secondary_wood || null,
       packagingCost: product.packaging_cost || '',
       addons: Array.isArray(product.addons) ? product.addons : [],
       lastConfiguredPrice: 0,
@@ -552,15 +517,12 @@ export default function Home() {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return true;
     const woodName = woodMaster.find(w => w.id === p.wood_type_id)?.name?.toLowerCase() || '';
-    const secWoodName = p.secondary_wood?.wood_type_id
-      ? woodMaster.find(w => String(w.id) === String(p.secondary_wood.wood_type_id))?.name?.toLowerCase() || ''
-      : '';
     return (
       p.sku?.toLowerCase().includes(q) ||
       p.name?.toLowerCase().includes(q) ||
+      (p.seater || '').toLowerCase().includes(q) ||
       p.category?.toLowerCase().includes(q) ||
       woodName.includes(q) ||
-      secWoodName.includes(q) ||
       p.notes?.toLowerCase().includes(q)
     );
   });
@@ -750,7 +712,6 @@ export default function Home() {
               <div className="lg:col-span-4">
                 <CostingSummary
                   formData={formData}
-                  woodMaster={woodMaster}
                   addonsMaster={addonsMaster}
                   onSave={handleSaveProduct}
                   onReset={handleResetForm}
@@ -780,7 +741,7 @@ export default function Home() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search SKU, product name, wood, category..."
+                  placeholder="Search SKU, name, seater, wood, category..."
                   className="w-full px-3.5 py-2 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
                 />
               </div>
@@ -828,16 +789,6 @@ export default function Home() {
                           {items.map((item) => {
                             const woodName =
                               woodMaster.find((w) => w.id === item.wood_type_id)?.name || 'Solid Wood';
-                            const secWoodName = item.secondary_wood?.wood_type_id
-                              ? woodMaster.find(
-                                  (w) => String(w.id) === String(item.secondary_wood.wood_type_id)
-                                )?.name || ''
-                              : '';
-                            const woodBadgeLabel =
-                              secWoodName && secWoodName !== woodName
-                                ? `${woodName} + ${secWoodName}`
-                                : woodName;
-
                             const { quotePrice, exGstPrice } = calculateDynamicPrice(item);
                             const historyList = Array.isArray(item.price_history)
                               ? item.price_history
@@ -846,38 +797,23 @@ export default function Home() {
 
                             const isCardPriceHidden = defaultHidePrices && !revealedPrices[item.sku];
 
-                            // Build clean integer Inches & Ft+In strings by shape
-                            const shape = item.dim_shape || 'rectangular';
-                            const isRound = shape === 'round';
-                            const isLiveEdge = shape === 'live-edge';
-                            const prefix = isLiveEdge ? '~' : '';
-
+                            // Build clean integer Inches & Ft+In strings
                             const lIn = item.dim_length ? Math.round(item.dim_length) : null;
                             const wIn = item.dim_width ? Math.round(item.dim_width) : null;
                             const hIn = item.dim_height ? Math.round(item.dim_height) : null;
-                            const hasDims = isRound ? Boolean(lIn || hIn) : Boolean(lIn || wIn || hIn);
+                            const hasDims = Boolean(lIn || wIn || hIn);
 
-                            const inchesParts = isRound
-                              ? [
-                                  lIn ? `${lIn}" Dia` : null,
-                                  hIn ? `${hIn}"H` : null
-                                ].filter(Boolean)
-                              : [
-                                  lIn ? `${prefix}${lIn}"L` : null,
-                                  wIn ? `${prefix}${wIn}"W` : null,
-                                  hIn ? `${hIn}"H` : null
-                                ].filter(Boolean);
+                            const inchesParts = [
+                              lIn ? `${lIn}"L` : null,
+                              wIn ? `${wIn}"W` : null,
+                              hIn ? `${hIn}"H` : null
+                            ].filter(Boolean);
 
-                            const ftInParts = isRound
-                              ? [
-                                  toFtInLabel(lIn, ' Dia'),
-                                  toFtInLabel(hIn, 'H')
-                                ].filter(Boolean)
-                              : [
-                                  toFtInLabel(lIn, `${prefix}L`),
-                                  toFtInLabel(wIn, `${prefix}W`),
-                                  toFtInLabel(hIn, 'H')
-                                ].filter(Boolean);
+                            const ftInParts = [
+                              toFtInLabel(lIn, 'L'),
+                              toFtInLabel(wIn, 'W'),
+                              toFtInLabel(hIn, 'H')
+                            ].filter(Boolean);
 
                             return (
                               <div
@@ -959,11 +895,16 @@ export default function Home() {
                                       {item.name}
                                     </h3>
 
-                                    {/* Line 1: Bold Wood Badge */}
-                                    <div className="mb-2">
+                                    {/* Line 1: Bold Wood Badge + Optional Seater Badge */}
+                                    <div className="flex flex-wrap items-center gap-1.5 mb-2">
                                       <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#171512] text-white text-[11px] font-bold tracking-wide">
-                                        {woodBadgeLabel}
+                                        {woodName}
                                       </span>
+                                      {item.seater && (
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-[#ede5d8] text-[#171512] border border-[#d6c8b4] text-[11px] font-bold uppercase tracking-wide">
+                                          {item.seater}
+                                        </span>
+                                      )}
                                     </div>
 
                                     {/* Line 2: Compact Dual Dimensions (Inches + Ft/In) */}

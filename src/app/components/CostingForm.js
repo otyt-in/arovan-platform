@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { supabase } from '../utils/supabaseClient';
 
-const FALLBACK_CATEGORIES = [
+const CATEGORIES = [
   'Dining Tables',
   'Center Tables',
   'Console Tables',
@@ -16,144 +16,31 @@ const FALLBACK_CATEGORIES = [
   'Custom'
 ];
 
+const SEATER_PRESETS = ['1S', '2S', '3S', '4S', '6S', '8S', '10S', '12S'];
+
 export default function CostingForm({
   formData,
   setFormData,
-  categoryMaster,
   woodMaster,
   addonsMaster,
-  categoryWoodRules,
   onCategoryChange,
   onTrackUpload
 }) {
   const [uploading, setUploading] = useState(false);
   const [dimUnit, setDimUnit] = useState('ft'); // Default to Ft + In (' ")
 
-  const categoryOptions =
-    Array.isArray(categoryMaster) && categoryMaster.length > 0
-      ? categoryMaster.map(c => c.name).filter(Boolean)
-      : FALLBACK_CATEGORIES;
-
-  const activeShape = formData.dimShape || 'rectangular';
-
-  const findRuleMultiplier = (cat, woodId) => {
-    if (!Array.isArray(categoryWoodRules) || !woodId) return null;
-    const match = categoryWoodRules.find(
-      r => r.category === cat && String(r.wood_type_id) === String(woodId)
-    );
-    return match ? String(match.multiplier) : null;
-  };
-
   const handleChange = (field, value) => {
-    setFormData(prev => {
-      const next = { ...prev, [field]: value };
-      if (field === 'woodTypeId') {
-        const ruleMult = findRuleMultiplier(prev.category, value);
-        next.multiplier = ruleMult !== null ? ruleMult : '';
-      }
-      return next;
-    });
+    setFormData(prev => ({ ...prev, [field]: value }));
   };
-
-  const handleShapeChange = (newShape) => {
-    setFormData(prev => {
-      const updated = { ...prev, dimShape: newShape };
-      if (newShape === 'round' && prev.dimLength && !prev.dimWidth) {
-        updated.dimWidth = prev.dimLength;
-      }
-      return updated;
-    });
-  };
-
-  // --- SECONDARY WOOD HELPERS ---
-  const secondaryWood = formData.secondaryWood || null;
-
-  const handleEnableSecondaryWood = () => {
-    if (!Array.isArray(woodMaster) || woodMaster.length === 0) {
-      alert('No wood types configured in Settings yet.');
-      return;
-    }
-    const altWood =
-      woodMaster.find(w => String(w.id) !== String(formData.woodTypeId)) || woodMaster[0];
-    const ruleMult = findRuleMultiplier(formData.category, altWood.id);
-
-    setFormData(prev => ({
-      ...prev,
-      secondaryWood: {
-        wood_type_id: altWood.id,
-        wood_cft: '',
-        multiplier: ruleMult !== null ? ruleMult : ''
-      }
-    }));
-  };
-
-  const handleSecondaryWoodChange = (field, value) => {
-    setFormData(prev => {
-      const currentSec = prev.secondaryWood || {
-        wood_type_id: woodMaster[0]?.id || '',
-        wood_cft: '',
-        multiplier: ''
-      };
-      if (field === 'wood_type_id') {
-        const ruleMult = findRuleMultiplier(prev.category, value);
-        return {
-          ...prev,
-          secondaryWood: {
-            ...currentSec,
-            wood_type_id: value,
-            multiplier: ruleMult !== null ? ruleMult : ''
-          }
-        };
-      }
-      return {
-        ...prev,
-        secondaryWood: {
-          ...currentSec,
-          [field]: value
-        }
-      };
-    });
-  };
-
-  const handleRemoveSecondaryWood = () => {
-    setFormData(prev => ({
-      ...prev,
-      secondaryWood: null
-    }));
-  };
-
-  const activeRuleMult = findRuleMultiplier(formData.category, formData.woodTypeId);
-  const isCustomOverride =
-    activeRuleMult !== null &&
-    String(formData.multiplier).trim() !== '' &&
-    parseFloat(formData.multiplier) !== parseFloat(activeRuleMult);
-
-  const secRuleMult = secondaryWood
-    ? findRuleMultiplier(formData.category, secondaryWood.wood_type_id)
-    : null;
-  const isSecCustomOverride =
-    secondaryWood &&
-    secRuleMult !== null &&
-    String(secondaryWood.multiplier).trim() !== '' &&
-    parseFloat(secondaryWood.multiplier) !== parseFloat(secRuleMult);
 
   // --- WHOLE-INTEGER DIMENSION CONVERSION HELPERS ---
   const handleInchInput = (field, rawVal) => {
     if (rawVal === '') {
-      setFormData(prev => ({
-        ...prev,
-        [field]: '',
-        ...(activeShape === 'round' && field === 'dimLength' ? { dimWidth: '' } : {})
-      }));
+      handleChange(field, '');
       return;
     }
     const wholeInches = Math.max(0, Math.round(Number(rawVal) || 0));
-    const strVal = String(wholeInches);
-    setFormData(prev => ({
-      ...prev,
-      [field]: strVal,
-      ...(activeShape === 'round' && field === 'dimLength' ? { dimWidth: strVal } : {})
-    }));
+    handleChange(field, String(wholeInches));
   };
 
   const getFeetPart = (totalInches) => {
@@ -176,13 +63,7 @@ export default function CostingForm({
     const newIn = part === 'in' ? cleanVal : currentIn;
 
     const newTotal = newFt * 12 + newIn;
-    const strVal = newTotal > 0 ? String(newTotal) : '';
-
-    setFormData(prev => ({
-      ...prev,
-      [field]: strVal,
-      ...(activeShape === 'round' && field === 'dimLength' ? { dimWidth: strVal } : {})
-    }));
+    handleChange(field, newTotal > 0 ? String(newTotal) : '');
   };
 
   const formatFtInPreview = (totalInches) => {
@@ -193,19 +74,9 @@ export default function CostingForm({
     return `${ft}' ${inc}"`;
   };
 
-  // Top surface area in sq ft (circle formula for Round Dia, rectangle for Rectangular / Live-Edge)
-  const lenIn = Math.round(Number(formData.dimLength) || 0);
-  const widIn = Math.round(Number(formData.dimWidth) || 0);
-  const topAreaSqFt =
-    activeShape === 'round'
-      ? lenIn > 0
-        ? (Math.PI * Math.pow(lenIn / 2, 2)) / 144
-        : 0
-      : lenIn > 0 && widIn > 0
-      ? (lenIn * widIn) / 144
-      : 0;
+  const selectedWood = woodMaster.find(w => String(w.id) === String(formData.woodTypeId));
 
-  // --- DYNAMIC ADD-ONS HANDLERS ---
+  // --- DYNAMIC ADD-ONS HANDLERS (ALL COMPONENTS IN ONE LIST) ---
   const currentAddons = Array.isArray(formData.addons) ? formData.addons : [];
 
   const handleAddComponentRow = () => {
@@ -329,31 +200,6 @@ export default function CostingForm({
     }
   };
 
-  const dimFields =
-    activeShape === 'round'
-      ? [
-          { label: 'Diameter (Dia)', field: 'dimLength', placeholder: 'Dia (in)' },
-          { label: 'Height', field: 'dimHeight', placeholder: 'H (in)' }
-        ]
-      : activeShape === 'live-edge'
-      ? [
-          { label: 'Approx. Length', field: 'dimLength', placeholder: 'Avg L (in)' },
-          { label: 'Approx. Width', field: 'dimWidth', placeholder: 'Avg W (in)' },
-          { label: 'Height', field: 'dimHeight', placeholder: 'H (in)' }
-        ]
-      : [
-          { label: 'Length', field: 'dimLength', placeholder: 'L (in)' },
-          { label: 'Width', field: 'dimWidth', placeholder: 'W (in)' },
-          { label: 'Height', field: 'dimHeight', placeholder: 'H (in)' }
-        ];
-
-  const secLineTotal = secondaryWood
-    ? Math.round(
-        (parseFloat(secondaryWood.wood_cft) || 0) *
-          (parseFloat(secondaryWood.multiplier) || 0)
-      )
-    : 0;
-
   return (
     <div className="space-y-6">
       {/* SECTION 1: PRODUCT IDENTITY */}
@@ -376,27 +222,12 @@ export default function CostingForm({
               value={formData.category}
               onChange={(e) => {
                 const newCat = e.target.value;
-                const ruleMult = findRuleMultiplier(newCat, formData.woodTypeId);
-                const secRule = formData.secondaryWood
-                  ? findRuleMultiplier(newCat, formData.secondaryWood.wood_type_id)
-                  : null;
-
-                setFormData(prev => ({
-                  ...prev,
-                  category: newCat,
-                  multiplier: ruleMult !== null ? ruleMult : '',
-                  secondaryWood: prev.secondaryWood
-                    ? {
-                        ...prev.secondaryWood,
-                        multiplier: secRule !== null ? secRule : ''
-                      }
-                    : null
-                }));
+                handleChange('category', newCat);
                 if (onCategoryChange) onCategoryChange(newCat);
               }}
               className="w-full p-2.5 text-sm bg-white border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
             >
-              {categoryOptions.map(cat => (
+              {CATEGORIES.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
             </select>
@@ -416,17 +247,62 @@ export default function CostingForm({
           </div>
         </div>
 
-        <div className="mb-4">
-          <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
-            Product Name
-          </label>
-          <input
-            type="text"
-            value={formData.name}
-            onChange={(e) => handleChange('name', e.target.value)}
-            placeholder="e.g. Vera Tufted Dining Chair"
-            className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div className="sm:col-span-2">
+            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
+              Product Name
+            </label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => handleChange('name', e.target.value)}
+              placeholder="e.g. Aura Dining Table"
+              className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[11px] font-bold text-[#4a433b]">
+                Seater <span className="font-normal text-[#746b61]">(Optional)</span>
+              </label>
+              {formData.seater && (
+                <button
+                  type="button"
+                  onClick={() => handleChange('seater', '')}
+                  className="text-[10px] font-semibold text-[#746b61] hover:text-[#171512]"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <input
+              type="text"
+              value={formData.seater || ''}
+              onChange={(e) => handleChange('seater', e.target.value)}
+              placeholder="e.g. 6S or 3S"
+              className="w-full p-2.5 text-sm font-semibold border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
+            />
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {SEATER_PRESETS.map((preset) => {
+                const isActive = (formData.seater || '').toUpperCase() === preset;
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => handleChange('seater', isActive ? '' : preset)}
+                    className={`px-1.5 py-0.5 text-[10px] font-bold rounded border transition ${
+                      isActive
+                        ? 'bg-[#171512] text-white border-[#171512]'
+                        : 'bg-[#faf8f5] text-[#5c5349] border-[#e1d8cd] hover:border-[#171512]'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* IMAGE UPLOAD DROPZONE */}
@@ -492,9 +368,9 @@ export default function CostingForm({
         </div>
       </div>
 
-      {/* SECTION 2: REFERENCE DIMENSIONS (SHAPE + FT/IN OR INCHES + TOP AREA) */}
+      {/* SECTION 2: REFERENCE DIMENSIONS (DEFAULT FT + IN TOGGLE) */}
       <div className="bg-white p-6 rounded-lg border border-[#e1d8cd] shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-5">
           <div className="flex items-center gap-2.5">
             <span className="w-5 h-5 rounded-full bg-[#171512] text-white text-[11px] font-bold flex items-center justify-center">
               2
@@ -504,72 +380,39 @@ export default function CostingForm({
             </h2>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            {topAreaSqFt > 0 && (
-              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-[#f4f1eb] border border-[#e1d8cd] text-[#4a433b] tabular-nums">
-                Top Area: <strong className="text-[#171512]">{topAreaSqFt.toFixed(1)} sq ft</strong>
-              </span>
-            )}
-
-            <div className="inline-flex rounded-md border border-[#dcd3c9] bg-[#faf8f5] p-0.5">
-              <button
-                type="button"
-                onClick={() => setDimUnit('ft')}
-                className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ${
-                  dimUnit === 'ft'
-                    ? 'bg-[#171512] text-white'
-                    : 'text-[#746b61] hover:text-[#171512]'
-                }`}
-              >
-                Ft + In (&apos; &quot;)
-              </button>
-              <button
-                type="button"
-                onClick={() => setDimUnit('in')}
-                className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ${
-                  dimUnit === 'in'
-                    ? 'bg-[#171512] text-white'
-                    : 'text-[#746b61] hover:text-[#171512]'
-                }`}
-              >
-                Inches (&quot;)
-              </button>
-            </div>
+          <div className="inline-flex rounded-md border border-[#dcd3c9] bg-[#faf8f5] p-0.5">
+            <button
+              type="button"
+              onClick={() => setDimUnit('ft')}
+              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ${
+                dimUnit === 'ft'
+                  ? 'bg-[#171512] text-white'
+                  : 'text-[#746b61] hover:text-[#171512]'
+              }`}
+            >
+              Ft + In (&apos; &quot;)
+            </button>
+            <button
+              type="button"
+              onClick={() => setDimUnit('in')}
+              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition ${
+                dimUnit === 'in'
+                  ? 'bg-[#171512] text-white'
+                  : 'text-[#746b61] hover:text-[#171512]'
+              }`}
+            >
+              Inches (&quot;)
+            </button>
           </div>
         </div>
 
-        {/* Shape Selector Pills */}
-        <div className="flex flex-wrap items-center gap-2 mb-5">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-[#746b61] mr-1">
-            Form:
-          </span>
-          {[
-            { id: 'rectangular', label: 'Rectangular' },
-            { id: 'round', label: 'Round (Dia)' },
-            { id: 'live-edge', label: 'Live-Edge' }
-          ].map(opt => (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => handleShapeChange(opt.id)}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold transition ${
-                activeShape === opt.id
-                  ? 'bg-[#171512] text-white'
-                  : 'bg-[#f4f1eb] text-[#5c5349] hover:bg-[#e8e1d7]'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-
         {dimUnit === 'ft' ? (
-          <div
-            className={`grid grid-cols-1 gap-4 ${
-              activeShape === 'round' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
-            }`}
-          >
-            {dimFields.map(({ label, field }) => (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              { label: 'Length', field: 'dimLength' },
+              { label: 'Width', field: 'dimWidth' },
+              { label: 'Height', field: 'dimHeight' }
+            ].map(({ label, field }) => (
               <div key={field}>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-[11px] font-bold text-[#4a433b]">{label}</label>
@@ -613,12 +456,12 @@ export default function CostingForm({
             ))}
           </div>
         ) : (
-          <div
-            className={`grid grid-cols-1 gap-4 ${
-              activeShape === 'round' ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
-            }`}
-          >
-            {dimFields.map(({ label, field, placeholder }) => (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              { label: 'Length (In)', field: 'dimLength', placeholder: 'L (in)' },
+              { label: 'Width (In)', field: 'dimWidth', placeholder: 'W (in)' },
+              { label: 'Height (In)', field: 'dimHeight', placeholder: 'H (in)' }
+            ].map(({ label, field, placeholder }) => (
               <div key={field}>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-[11px] font-bold text-[#4a433b]">{label}</label>
@@ -655,11 +498,16 @@ export default function CostingForm({
         </div>
 
         {/* PRIMARY WOOD, MULTIPLIER & PACKAGING */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-5 border-b border-[#f0eae1]">
           <div>
-            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
-              Type of Wood
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[11px] font-bold text-[#4a433b]">Type of Wood</label>
+              {selectedWood && (
+                <span className="text-[10px] font-medium text-[#746b61]">
+                  Ref: ₹{(selectedWood.rate_per_cft || 0).toLocaleString()}
+                </span>
+              )}
+            </div>
             <select
               value={formData.woodTypeId}
               onChange={(e) => handleChange('woodTypeId', e.target.value)}
@@ -686,40 +534,14 @@ export default function CostingForm({
           </div>
 
           <div>
-            <div className="flex items-center justify-between gap-1 mb-1.5">
-              <label className="text-[11px] font-bold text-[#4a433b]">
-                Multiplier (₹)
-              </label>
-              {activeRuleMult !== null ? (
-                isCustomOverride ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setFormData(prev => ({ ...prev, multiplier: activeRuleMult }))
-                    }
-                    className="text-[10px] font-semibold text-amber-700 underline hover:text-[#171512]"
-                    title="Reset back to Category × Wood rule"
-                  >
-                    Custom (Reset)
-                  </button>
-                ) : (
-                  <span className="text-[10px] font-semibold text-emerald-700">
-                    Rule: ₹{Number(activeRuleMult).toLocaleString()}
-                  </span>
-                )
-              ) : (
-                <span className="text-[10px] font-medium text-[#746b61]">
-                  Manual entry
-                </span>
-              )}
-            </div>
+            <label className="block text-[11px] font-bold text-[#4a433b] mb-1.5">
+              Multiplier (₹ / CFT)
+            </label>
             <input
               type="number"
               value={formData.multiplier}
-              onChange={(e) =>
-                setFormData(prev => ({ ...prev, multiplier: e.target.value }))
-              }
-              placeholder={activeRuleMult ? activeRuleMult : 'Manual ₹/CFT'}
+              onChange={(e) => handleChange('multiplier', e.target.value)}
+              placeholder="e.g. 14000"
               className="w-full p-2.5 text-sm font-semibold border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
             />
           </div>
@@ -736,103 +558,6 @@ export default function CostingForm({
               className="w-full p-2.5 text-sm border border-[#dcd3c9] rounded-md focus:outline-none focus:border-[#171512]"
             />
           </div>
-        </div>
-
-        {/* OPTIONAL SECONDARY WOOD FOR MIXED-WOOD PIECES */}
-        <div className="pb-5 border-b border-[#f0eae1]">
-          {!secondaryWood ? (
-            <button
-              type="button"
-              onClick={handleEnableSecondaryWood}
-              className="text-[11px] font-bold text-[#5c5349] hover:text-[#171512] underline underline-offset-2 transition"
-            >
-              + Add Secondary Wood (for mixed-wood pieces)
-            </button>
-          ) : (
-            <div className="bg-[#faf8f5] border border-[#e8e1d7] rounded-md p-3.5 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#5c5349]">
-                  Secondary Wood (Mixed Wood)
-                </span>
-                <button
-                  type="button"
-                  onClick={handleRemoveSecondaryWood}
-                  className="text-[10px] font-bold text-red-600 hover:text-red-800"
-                >
-                  Remove
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                <div className="sm:col-span-4">
-                  <label className="block text-[10px] font-bold text-[#4a433b] mb-1">
-                    Secondary Wood Type
-                  </label>
-                  <select
-                    value={secondaryWood.wood_type_id}
-                    onChange={(e) => handleSecondaryWoodChange('wood_type_id', e.target.value)}
-                    className="w-full h-9 px-2.5 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
-                  >
-                    {woodMaster.map(wood => (
-                      <option key={wood.id} value={wood.id}>{wood.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="sm:col-span-3">
-                  <label className="block text-[10px] font-bold text-[#4a433b] mb-1">
-                    Quantity (CFT)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={secondaryWood.wood_cft}
-                    onChange={(e) => handleSecondaryWoodChange('wood_cft', e.target.value)}
-                    placeholder="0.00"
-                    className="w-full h-9 px-2.5 text-xs bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
-                  />
-                </div>
-
-                <div className="sm:col-span-3">
-                  <div className="flex items-center justify-between gap-1 mb-1">
-                    <label className="text-[10px] font-bold text-[#4a433b]">
-                      Multiplier (₹)
-                    </label>
-                    {secRuleMult !== null ? (
-                      isSecCustomOverride ? (
-                        <button
-                          type="button"
-                          onClick={() => handleSecondaryWoodChange('multiplier', secRuleMult)}
-                          className="text-[10px] font-semibold text-amber-700 underline"
-                        >
-                          Custom
-                        </button>
-                      ) : (
-                        <span className="text-[10px] font-semibold text-emerald-700">
-                          Rule: ₹{Number(secRuleMult).toLocaleString()}
-                        </span>
-                      )
-                    ) : (
-                      <span className="text-[10px] text-[#746b61]">Manual</span>
-                    )}
-                  </div>
-                  <input
-                    type="number"
-                    value={secondaryWood.multiplier}
-                    onChange={(e) => handleSecondaryWoodChange('multiplier', e.target.value)}
-                    placeholder={secRuleMult ? secRuleMult : 'Manual ₹/CFT'}
-                    className="w-full h-9 px-2.5 text-xs font-semibold bg-white border border-[#dcd3c9] rounded focus:outline-none focus:border-[#171512]"
-                  />
-                </div>
-
-                <div className="sm:col-span-2 text-right pb-1.5">
-                  <span className="text-xs font-bold text-[#171512] tabular-nums">
-                    {secLineTotal > 0 ? `₹${secLineTotal.toLocaleString()}` : '—'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* DYNAMIC ADDITIONAL COMPONENTS */}
@@ -876,7 +601,6 @@ export default function CostingForm({
                     key={idx}
                     className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center bg-[#faf8f5] px-3 py-2.5 rounded-md border border-[#e8e1d7]"
                   >
-                    {/* 1. Component Selector (5 cols on desktop) */}
                     <div className="sm:col-span-5">
                       <select
                         value={row.addon_id}
@@ -900,7 +624,6 @@ export default function CostingForm({
                       </select>
                     </div>
 
-                    {/* 2. Input Fields (4 cols on desktop) */}
                     <div className="sm:col-span-4">
                       {isCushion ? (
                         <div className="grid grid-cols-2 gap-2">
@@ -958,7 +681,6 @@ export default function CostingForm({
                       )}
                     </div>
 
-                    {/* 3. Calculated Line Total + Remove Button (3 cols on desktop) */}
                     <div className="sm:col-span-3 flex items-center justify-end gap-2">
                       <span className="text-xs font-bold text-[#171512] tabular-nums">
                         {calculatedLineTotal > 0 ? `₹${calculatedLineTotal.toLocaleString()}` : '—'}
